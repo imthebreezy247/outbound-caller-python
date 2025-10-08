@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where lk)",
+      "Read(//d/Coding-Projects/livekit-cli-2.6.2/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
