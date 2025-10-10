@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(where lk)",
-      "Read(//d/Coding-Projects/livekit-cli-2.6.2/**)"
+      "Read(//d/Coding-Projects/livekit-cli-2.6.2/**)",
+      "Read(//c/Users/shann/AppData/Local/Microsoft/WinGet/Packages//**)",
+      "Bash(git reset:*)",
+      "Bash(git restore:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
