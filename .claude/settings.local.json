@@ -7,7 +7,13 @@
       "Bash(git reset:*)",
       "Bash(git restore:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(where python)",
+      "Bash(C:UsersshannAppDataLocalProgramsPythonPython311python.exe -m pip install -r requirements.txt)",
+      "Bash(\"/c/Users/shann/AppData/Local/Programs/Python/Python311/python.exe\" -m pip install -r requirements.txt)",
+      "Bash(\"/c/Users/shann/AppData/Local/Programs/Python/Python311/python.exe\" -m pip install -r requirements.txt --no-cache-dir)"
     ],
     "deny": [],
     "ask": []
