@@ -2,3 +2,16 @@
 venv/
 .DS_Store
 test.py
+
+# LiveKit CLI binaries and downloads
+lk
+lk.tar.gz
+autocomplete/
+
+# Python cache
+__pycache__/
+
+# SIP trunk configuration (contains credentials)
+outbound_trunk.json
+inbound_trunk.json
+dispatch_rule.json
