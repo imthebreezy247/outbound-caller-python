@@ -54,13 +54,14 @@ from livekit.agents import (
 
 # LiveKit plugins for various AI services
 from livekit.plugins import (
-    deepgram,  # Speech-to-text provider (alternative)
     openai,  # OpenAI integration (Realtime API used here)
-    cartesia,  # Text-to-speech provider (alternative)
-    silero,  # Voice activity detection (alternative)
     noise_cancellation,  # Background noise removal
 )
-from livekit.plugins.turn_detector.english import EnglishModel
+
+# Alternative plugins for pipelined approach (not used with Realtime API)
+# Uncomment these if switching to the pipelined configuration
+# from livekit.plugins import deepgram, cartesia, silero
+# from livekit.plugins.turn_detector.english import EnglishModel
 
 # Load environment variables from .env.local file
 # This includes API keys, LiveKit credentials, and SIP trunk configuration
