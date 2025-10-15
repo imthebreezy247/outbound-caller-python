@@ -1,43 +1,92 @@
+"""
+AI Outbound Caller Agent
+
+This agent makes automated phone calls using LiveKit's real-time communication platform.
+It uses OpenAI's Realtime API for speech-to-speech communication, providing a natural
+conversational experience for appointment confirmations and call management.
+
+Key Features:
+- Automated appointment confirmation calls
+- Call transfer functionality to human agents
+- Voicemail detection
+- Appointment scheduling assistance
+- Natural voice conversation using OpenAI's Realtime API
+
+Architecture:
+- Uses SIP (Session Initiation Protocol) for phone connectivity
+- LiveKit for real-time audio streaming
+- OpenAI Realtime API for speech-to-speech processing
+- Function calling for agent actions (transfer, hangup, etc.)
+
+Note: This agent requires a Unix-like environment (Linux/macOS/WSL2) due to
+LiveKit's IPC system requirements. It will not work on Windows/MINGW64.
+"""
+
 from __future__ import annotations
+
+import os
+# Attempt to disable inference executor BEFORE any other imports
+# This is needed to avoid IPC timeout issues on Windows/WSL, though it may not
+# fully work due to LiveKit framework limitations on Windows/MINGW64
+os.environ["LIVEKIT_DISABLE_INFERENCE_EXECUTOR"] = "1"
 
 import asyncio
 import logging
 from dotenv import load_dotenv
 import json
-import os
 from typing import Any
 
+# LiveKit core imports for real-time communication and API access
 from livekit import rtc, api
+
+# LiveKit agents framework for building voice agents
 from livekit.agents import (
-    AgentSession,
-    Agent,
-    JobContext,
-    function_tool,
-    RunContext,
-    get_job_context,
-    cli,
-    WorkerOptions,
-    RoomInputOptions,
+    AgentSession,  # Manages the conversation session
+    Agent,  # Base class for creating agents
+    JobContext,  # Provides context about the current job/call
+    function_tool,  # Decorator for creating callable functions
+    RunContext,  # Context during function execution
+    get_job_context,  # Access to current job context
+    cli,  # Command-line interface utilities
+    WorkerOptions,  # Configuration for the worker
+    RoomInputOptions,  # Configuration for room audio input
 )
+
+# LiveKit plugins for various AI services
 from livekit.plugins import (
-    deepgram,
-    openai,
-    cartesia,
-    silero,
-    noise_cancellation,  # noqa: F401
+    deepgram,  # Speech-to-text provider (alternative)
+    openai,  # OpenAI integration (Realtime API used here)
+    cartesia,  # Text-to-speech provider (alternative)
+    silero,  # Voice activity detection (alternative)
+    noise_cancellation,  # Background noise removal
 )
 from livekit.plugins.turn_detector.english import EnglishModel
 
-
-# load environment variables, this is optional, only used for local development
+# Load environment variables from .env.local file
+# This includes API keys, LiveKit credentials, and SIP trunk configuration
 load_dotenv(dotenv_path=".env.local")
+
+# Configure logging for the agent
 logger = logging.getLogger("outbound-caller")
 logger.setLevel(logging.INFO)
 
+# SIP trunk ID for making outbound calls via LiveKit
+# This is configured in your LiveKit dashboard and connects to Twilio
 outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 
 
 class OutboundCaller(Agent):
+    """
+    Outbound calling agent for appointment confirmations.
+
+    This agent handles automated phone calls to confirm appointments,
+    provide scheduling assistance, and transfer calls to human agents when needed.
+
+    Attributes:
+        participant: The remote participant (person being called) in the conversation
+        dial_info: Dictionary containing phone numbers and transfer information
+    """
+
     def __init__(
         self,
         *,
@@ -45,6 +94,14 @@ class OutboundCaller(Agent):
         appointment_time: str,
         dial_info: dict[str, Any],
     ):
+        """
+        Initialize the outbound caller agent.
+
+        Args:
+            name: The customer's name for personalization
+            appointment_time: The scheduled appointment time to confirm
+            dial_info: Dictionary with 'phone_number' and 'transfer_to' keys
+        """
         super().__init__(
             instructions=f"""
             You are a scheduling assistant for a dental practice. Your interface with user will be voice.
@@ -55,17 +112,28 @@ class OutboundCaller(Agent):
             The customer's name is {name}. His appointment is on {appointment_time}.
             """
         )
-        # keep reference to the participant for transfers
+        # Keep reference to the participant for call operations (transfers, hangups, etc.)
         self.participant: rtc.RemoteParticipant | None = None
 
+        # Store dial information (phone numbers, transfer destination)
         self.dial_info = dial_info
 
     def set_participant(self, participant: rtc.RemoteParticipant):
+        """
+        Set the participant reference after they join the call.
+
+        Args:
+            participant: The remote participant who answered the call
+        """
         self.participant = participant
 
     async def hangup(self):
-        """Helper function to hang up the call by deleting the room"""
+        """
+        End the call by deleting the LiveKit room.
 
+        This terminates the call and cleans up all connections.
+        The room deletion triggers automatic disconnection of all participants.
+        """
         job_ctx = get_job_context()
         await job_ctx.api.room.delete_room(
             api.DeleteRoomRequest(
@@ -75,21 +143,32 @@ class OutboundCaller(Agent):
 
     @function_tool()
     async def transfer_call(self, ctx: RunContext):
-        """Transfer the call to a human agent, called after confirming with the user"""
+        """
+        Transfer the call to a human agent after user confirmation.
 
+        This function is called by the AI when the user requests to speak to a human.
+        It uses SIP transfer to connect the call to a human agent's phone number.
+
+        Args:
+            ctx: Runtime context with access to the session and agent state
+
+        Returns:
+            str: Status message ("cannot transfer call" if no transfer number configured)
+        """
         transfer_to = self.dial_info["transfer_to"]
         if not transfer_to:
             return "cannot transfer call"
 
         logger.info(f"transferring call to {transfer_to}")
 
-        # let the message play fully before transferring
+        # Generate a confirmation message and let it play fully before transferring
         await ctx.session.generate_reply(
             instructions="let the user know you'll be transferring them"
         )
 
         job_ctx = get_job_context()
         try:
+            # Use LiveKit SIP API to transfer the call to another phone number
             await job_ctx.api.sip.transfer_sip_participant(
                 api.TransferSIPParticipantRequest(
                     room_name=job_ctx.room.name,
@@ -101,6 +180,7 @@ class OutboundCaller(Agent):
             logger.info(f"transferred call to {transfer_to}")
         except Exception as e:
             logger.error(f"error transferring call: {e}")
+            # Notify the user of the error and end the call
             await ctx.session.generate_reply(
                 instructions="there was an error transferring the call."
             )
@@ -108,10 +188,18 @@ class OutboundCaller(Agent):
 
     @function_tool()
     async def end_call(self, ctx: RunContext):
-        """Called when the user wants to end the call"""
+        """
+        End the call when the user is ready to hang up.
+
+        This tool is called by the AI when the conversation has concluded.
+        It ensures the agent finishes speaking before disconnecting.
+
+        Args:
+            ctx: Runtime context with access to the session
+        """
         logger.info(f"ending the call for {self.participant.identity}")
 
-        # let the agent finish speaking
+        # Wait for the agent to finish speaking current message before hanging up
         current_speech = ctx.session.current_speech
         if current_speech:
             await current_speech.wait_for_playout()
@@ -124,15 +212,25 @@ class OutboundCaller(Agent):
         ctx: RunContext,
         date: str,
     ):
-        """Called when the user asks about alternative appointment availability
+        """
+        Look up available appointment times for rescheduling.
+
+        This is a placeholder function that simulates checking a scheduling system.
+        In production, this would query your actual appointment database.
 
         Args:
-            date: The date of the appointment to check availability for
+            ctx: Runtime context
+            date: The date to check availability for (in natural language)
+
+        Returns:
+            dict: Available appointment times
         """
         logger.info(
             f"looking up availability for {self.participant.identity} on {date}"
         )
+        # Simulate database lookup delay
         await asyncio.sleep(3)
+        # Return mock availability data - replace with real database query
         return {
             "available_times": ["1pm", "2pm", "3pm"],
         }
@@ -144,89 +242,150 @@ class OutboundCaller(Agent):
         date: str,
         time: str,
     ):
-        """Called when the user confirms their appointment on a specific date.
-        Use this tool only when they are certain about the date and time.
+        """
+        Confirm an appointment for a specific date and time.
+
+        This tool is called when the user confirms or reschedules their appointment.
+        In production, this would update your scheduling system.
 
         Args:
-            date: The date of the appointment
-            time: The time of the appointment
+            ctx: Runtime context
+            date: The appointment date
+            time: The appointment time
+
+        Returns:
+            str: Confirmation message
         """
         logger.info(
             f"confirming appointment for {self.participant.identity} on {date} at {time}"
         )
+        # In production: Update your scheduling database here
         return "reservation confirmed"
 
     @function_tool()
     async def detected_answering_machine(self, ctx: RunContext):
-        """Called when the call reaches voicemail. Use this tool AFTER you hear the voicemail greeting"""
+        """
+        Handle voicemail detection.
+
+        This tool is called by the AI when it detects that the call reached voicemail
+        instead of a live person. The agent should call this AFTER hearing the voicemail greeting.
+
+        Args:
+            ctx: Runtime context
+        """
         logger.info(f"detected answering machine for {self.participant.identity}")
+        # End the call immediately when voicemail is detected
         await self.hangup()
 
 
 async def entrypoint(ctx: JobContext):
+    """
+    Main entrypoint for handling outbound calls.
+
+    This function is called by the LiveKit agents framework when a new job (call)
+    is dispatched. It sets up the call, initializes the AI agent, and manages the
+    complete call lifecycle from dialing to completion.
+
+    Workflow:
+    1. Connect to the LiveKit room
+    2. Parse call metadata (phone number, transfer info)
+    3. Create and configure the AI agent
+    4. Set up the session with OpenAI Realtime API
+    5. Start the session (begins loading models)
+    6. Dial the phone number via SIP
+    7. Wait for the user to answer
+    8. Connect the participant to the agent
+    9. Let the conversation run until completion
+
+    Args:
+        ctx: Job context providing access to room, API, and job metadata
+    """
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
 
-    # when dispatching the agent, we'll pass it the approriate info to dial the user
-    # dial_info is a dict with the following keys:
-    # - phone_number: the phone number to dial
-    # - transfer_to: the phone number to transfer the call to when requested
+    # Parse metadata passed during dispatch containing call information
+    # dial_info structure:
+    # {
+    #     "phone_number": "+1234567890",  # Number to call
+    #     "transfer_to": "+0987654321"    # Human agent number for transfers
+    # }
     dial_info = json.loads(ctx.job.metadata)
     participant_identity = phone_number = dial_info["phone_number"]
 
-    # look up the user's phone number and appointment details
+    # Create the agent with personalized information
+    # In production, you would look up customer details from your database
     agent = OutboundCaller(
-        name="Jayden",
-        appointment_time="next Tuesday at 3pm",
+        name="Jayden",  # TODO: Replace with database lookup
+        appointment_time="next Tuesday at 3pm",  # TODO: Replace with actual appointment time
         dial_info=dial_info,
     )
 
-    # the following uses GPT-4o, Deepgram and Cartesia
+    # Configure the session using OpenAI's Realtime API for speech-to-speech communication
+    # This provides low-latency voice conversation without separate STT/TTS services
+    # Voice options: alloy, echo, fable, onyx, nova, shimmer
     session = AgentSession(
-        turn_detection=EnglishModel(),
-        vad=silero.VAD.load(),
-        stt=deepgram.STT(),
-        # you can also use OpenAI's TTS with openai.TTS()
-        tts=cartesia.TTS(),
-        llm=openai.LLM(model="gpt-4o"),
-        # you can also use a speech-to-speech model like OpenAI's Realtime API
-        # llm=openai.realtime.RealtimeModel()
+        llm=openai.realtime.RealtimeModel(
+            voice="alloy",  # Voice personality
+            temperature=0.8,  # Response creativity (0.0-1.0)
+            instructions=agent.instructions,  # System prompt
+        ),
     )
 
-    # start the session first before dialing, to ensure that when the user picks up
-    # the agent does not miss anything the user says
+    # Alternative configuration using separate STT/TTS services
+    # This approach uses GPT-4o for language understanding, Deepgram for speech-to-text,
+    # and Cartesia for text-to-speech. Currently disabled due to Windows/WSL compatibility.
+    # Uncomment below to use pipelined approach (requires WSL2/Linux):
+    #
+    # session = AgentSession(
+    #     turn_detection=EnglishModel(),  # Detects when user finishes speaking
+    #     vad=silero.VAD.load(),  # Voice activity detection
+    #     stt=deepgram.STT(),  # Speech-to-text
+    #     tts=cartesia.TTS(),  # Text-to-speech
+    #     llm=openai.LLM(model="gpt-4o"),  # Language model
+    # )
+
+    # Start the session before dialing to ensure the agent is ready when the user answers
+    # This prevents missing the first few seconds of what the user says
     session_started = asyncio.create_task(
         session.start(
             agent=agent,
             room=ctx.room,
             room_input_options=RoomInputOptions(
-                # enable Krisp background voice and noise removal
+                # Enable Krisp noise cancellation optimized for telephony
+                # This removes background noise for clearer conversations
                 noise_cancellation=noise_cancellation.BVCTelephony(),
             ),
         )
     )
 
-    # `create_sip_participant` starts dialing the user
+    # Initiate the outbound call via SIP trunk
+    # This dials the phone number and waits for the user to answer
     try:
         await ctx.api.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
                 room_name=ctx.room.name,
-                sip_trunk_id=outbound_trunk_id,
-                sip_call_to=phone_number,
-                participant_identity=participant_identity,
-                # function blocks until user answers the call, or if the call fails
-                wait_until_answered=True,
+                sip_trunk_id=outbound_trunk_id,  # Configured SIP trunk ID
+                sip_call_to=phone_number,  # Number to dial
+                participant_identity=participant_identity,  # Unique identifier
+                wait_until_answered=True,  # Block until call is answered or fails
             )
         )
 
-        # wait for the agent session start and participant join
+        # Wait for both the session to finish starting and the participant to join
         await session_started
         participant = await ctx.wait_for_participant(identity=participant_identity)
         logger.info(f"participant joined: {participant.identity}")
 
+        # Give the agent a reference to the participant for call operations
         agent.set_participant(participant)
 
+        # Conversation now runs automatically until:
+        # - User hangs up
+        # - Agent calls end_call() or hangup()
+        # - Error occurs
+
     except api.TwirpError as e:
+        # Handle SIP errors (busy, no answer, invalid number, etc.)
         logger.error(
             f"error creating SIP participant: {e.message}, "
             f"SIP status: {e.metadata.get('sip_status_code')} "
@@ -236,9 +395,11 @@ async def entrypoint(ctx: JobContext):
 
 
 if __name__ == "__main__":
+    # Start the LiveKit agents worker
+    # This runs continuously, waiting for jobs to be dispatched
     cli.run_app(
         WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            agent_name="outbound-caller",
+            entrypoint_fnc=entrypoint,  # Function to call for each job
+            agent_name="outbound-caller",  # Name used when dispatching jobs
         )
     )

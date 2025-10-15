@@ -18,6 +18,20 @@ It can use a pipeline of STT, LLM, and TTS models, or a realtime speech-to-speec
 
 This example builds on concepts from the [Outbound Calls](https://docs.livekit.io/agents/start/telephony/#outbound-calls) section of the docs. Ensure that a SIP outbound trunk is configured before proceeding.
 
+---
+
+## 🚀 **[→ HOW TO RUN - START HERE ←](./HOW_TO_RUN.md)**
+
+**Complete step-by-step guide with:**
+- ✅ Running the AI agent
+- ✅ Testing with voice sandbox
+- ✅ Making real phone calls
+- ✅ Troubleshooting guide
+
+**[Click here to get started →](./HOW_TO_RUN.md)**
+
+---
+
 ## Features
 
 This example demonstrates the following features:

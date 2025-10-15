@@ -26,7 +26,14 @@
       "Bash(pip show:*)",
       "Bash(timeout 10 python agent.py dev)",
       "Bash(git log:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(LIVEKIT_DISABLE_INFERENCE_EXECUTOR=1 source:*)",
+      "Bash(LIVEKIT_DISABLE_INFERENCE_EXECUTOR=1 timeout 10 python agent.py dev)",
+      "Bash(export LIVEKIT_DISABLE_INFERENCE_EXECUTOR=1)",
+      "Bash(timeout 15 python agent.py start)",
+      "Bash(./start-agent.sh:*)",
+      "Read(//c/Users/shann/AppData/Local/Programs/Python/Python311/Lib/site-packages/livekit/agents/**)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []
