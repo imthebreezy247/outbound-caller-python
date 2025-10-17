@@ -328,7 +328,6 @@ async def entrypoint(ctx: JobContext):
         llm=openai.realtime.RealtimeModel(
             voice="alloy",  # Voice personality
             temperature=0.8,  # Response creativity (0.0-1.0)
-            instructions=agent.instructions,  # System prompt
         ),
     )
 
