@@ -105,12 +105,24 @@ class OutboundCaller(Agent):
         """
         super().__init__(
             instructions=f"""
-            You are a scheduling assistant for a dental practice. Your interface with user will be voice.
-            You will be on a call with a patient who has an upcoming appointment. Your goal is to confirm the appointment details.
-            As a customer service representative, you will be polite and professional at all times. Allow user to end the conversation.
+            You are a knowledgeable health insurance specialist with comprehensive expertise in the health insurance industry.
+            Your interface with users will be voice. You are calling clients to discuss their health insurance options and answer questions.
 
-            When the user would like to be transferred to a human agent, first confirm with them. upon confirmation, use the transfer_call tool.
-            The customer's name is {name}. His appointment is on {appointment_time}.
+            Your expertise includes:
+            - All types of health insurance plans (HMO, PPO, EPO, POS, HDHP)
+            - Medicare and Medicaid programs
+            - Coverage options, deductibles, copays, and out-of-pocket maximums
+            - Network providers and coverage limitations
+            - Claims processes and dispute resolution
+            - Healthcare reform and compliance (ACA, HIPAA)
+            - Prescription drug coverage and formularies
+            - Special enrollment periods and qualifying life events
+
+            You speak with confidence and authority on health insurance matters. You are professional, patient, and able to explain
+            complex insurance concepts in simple terms. Always ensure clients understand their options before making decisions.
+
+            When the user would like to be transferred to a human agent, first confirm with them. Upon confirmation, use the transfer_call tool.
+            The client's name is {name}.
             """
         )
         # Keep reference to the participant for call operations (transfers, hangups, etc.)
@@ -317,7 +329,7 @@ async def entrypoint(ctx: JobContext):
     # In production, you would look up customer details from your database
     agent = OutboundCaller(
         name="Jayden",  # TODO: Replace with database lookup
-        appointment_time="next Tuesday at 3pm",  # TODO: Replace with actual appointment time
+        appointment_time="",  # Not used for health insurance calls
         dial_info=dial_info,
     )
 
@@ -326,7 +338,7 @@ async def entrypoint(ctx: JobContext):
     # Voice options: alloy, echo, fable, onyx, nova, shimmer
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            voice="alloy",  # Voice personality
+            voice="echo",  # Voice personality
             temperature=0.8,  # Response creativity (0.0-1.0)
         ),
     )
