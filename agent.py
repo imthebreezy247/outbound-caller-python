@@ -54,14 +54,13 @@ from livekit.agents import (
 
 # LiveKit plugins for various AI services
 from livekit.plugins import (
-    openai,  # OpenAI integration (Realtime API used here)
+    anthropic,  # Claude AI (Primary LLM)
+    deepgram,   # Speech-to-text
+    cartesia,   # Text-to-speech
+    silero,     # Voice activity detection
     noise_cancellation,  # Background noise removal
 )
-
-# Alternative plugins for pipelined approach (not used with Realtime API)
-# Uncomment these if switching to the pipelined configuration
-# from livekit.plugins import deepgram, cartesia, silero
-# from livekit.plugins.turn_detector.english import EnglishModel
+from livekit.plugins.turn_detector.english import EnglishModel  # Turn detection
 
 # Load environment variables from .env.local file
 # This includes API keys, LiveKit credentials, and SIP trunk configuration
@@ -333,27 +332,25 @@ async def entrypoint(ctx: JobContext):
         dial_info=dial_info,
     )
 
-    # Configure the session using OpenAI's Realtime API for speech-to-speech communication
-    # This provides low-latency voice conversation without separate STT/TTS services
-    # Voice options: alloy, echo, fable, onyx, nova, shimmer
+    # Configure the session using Claude Sonnet 4 with Deepgram STT and Cartesia TTS
+    # This provides superior reasoning and natural conversation using the pipelined approach
+    # Voice: Cartesia provides natural-sounding male voice optimized for health insurance discussions
     session = AgentSession(
-        llm=openai.realtime.RealtimeModel(
-            voice="echo",  # Voice personality
-            temperature=0.8,  # Response creativity (0.0-1.0)
-        ),
+        turn_detection=EnglishModel(),  # Detects when user finishes speaking
+        vad=silero.VAD.load(),  # Voice activity detection for better turn-taking
+        stt=deepgram.STT(),  # Deepgram speech-to-text (fast and accurate)
+        tts=cartesia.TTS(voice="79f8b5fb-2cc8-479a-80df-29f7a7cf1a3e"),  # Cartesia British Narration Man
+        llm=anthropic.LLM(model="claude-sonnet-4-20250514"),  # Claude Sonnet 4 (best reasoning)
     )
 
-    # Alternative configuration using separate STT/TTS services
-    # This approach uses GPT-4o for language understanding, Deepgram for speech-to-text,
-    # and Cartesia for text-to-speech. Currently disabled due to Windows/WSL compatibility.
-    # Uncomment below to use pipelined approach (requires WSL2/Linux):
+    # Alternative: OpenAI Realtime API (simpler but less powerful)
+    # Uncomment below to switch back to OpenAI:
     #
     # session = AgentSession(
-    #     turn_detection=EnglishModel(),  # Detects when user finishes speaking
-    #     vad=silero.VAD.load(),  # Voice activity detection
-    #     stt=deepgram.STT(),  # Speech-to-text
-    #     tts=cartesia.TTS(),  # Text-to-speech
-    #     llm=openai.LLM(model="gpt-4o"),  # Language model
+    #     llm=openai.realtime.RealtimeModel(
+    #         voice="echo",
+    #         temperature=0.8,
+    #     ),
     # )
 
     # Start the session before dialing to ensure the agent is ready when the user answers
