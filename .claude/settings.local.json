@@ -33,7 +33,8 @@
       "Bash(timeout 15 python agent.py start)",
       "Bash(./start-agent.sh:*)",
       "Read(//c/Users/shann/AppData/Local/Programs/Python/Python311/Lib/site-packages/livekit/agents/**)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
