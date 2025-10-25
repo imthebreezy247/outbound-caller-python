@@ -35,7 +35,10 @@
       "Read(//c/Users/shann/AppData/Local/Programs/Python/Python311/Lib/site-packages/livekit/agents/**)",
       "Bash(timeout:*)",
       "Bash(cat:*)",
-      "Read(//c/Users/Public/OneDrive-2/OneDrive/Pictures/**)"
+      "Read(//c/Users/Public/OneDrive-2/OneDrive/Pictures/**)",
+      "Bash(lk cloud deploy:*)",
+      "Bash(lk:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []
