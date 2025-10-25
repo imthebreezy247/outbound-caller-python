@@ -34,7 +34,8 @@
       "Bash(./start-agent.sh:*)",
       "Read(//c/Users/shann/AppData/Local/Programs/Python/Python311/Lib/site-packages/livekit/agents/**)",
       "Bash(timeout:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Read(//c/Users/Public/OneDrive-2/OneDrive/Pictures/**)"
     ],
     "deny": [],
     "ask": []
