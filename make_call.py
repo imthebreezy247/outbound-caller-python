@@ -33,7 +33,7 @@ async def dispatch_outbound_call(phone_number: str, transfer_number: str = None)
 
     # Default transfer number to Twilio phone if not provided
     if not transfer_number:
-        transfer_number = os.getenv("TWILIO_PHONE_NUMBER", "+19412314887")
+        transfer_number = os.getenv("MAX_PHONE_NUMBER", "+19412314887")
 
     # Create the metadata with call information
     metadata = json.dumps({

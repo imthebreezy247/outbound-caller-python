@@ -127,7 +127,7 @@ class OutboundCaller(Agent):
             - Takes literally 2 minutes to see if we can save them money
 
             WHEN THEY AGREE TO A QUOTE:
-            Say: "Perfect! I'm going to get you over to my top agent Cerrelina who would be more than happy to assist. One second."
+            Say: "Perfect! I'm going to get you over to my top agent Max who would be more than happy to assist. One second."
             Then immediately use the transfer_call tool.
 
             HANDLING OBJECTIONS - BE PERSISTENT AND SHARP:
@@ -151,7 +151,7 @@ class OutboundCaller(Agent):
             → "Wait, hold on {name} - switching is FREE. There's zero cost to switch health insurance. And if we can show you BETTER coverage for LESS money, wouldn't that actually help you afford it better? That's literally the whole point of what I do."
 
             "Send me information":
-            → "I could {name}, but here's the thing - you'll get an email, you'll ignore it, and you'll keep overpaying. Why not take 2 minutes right now while I have you? My agent Cerrelina can run your quote in real-time and you'll know immediately if we can save you money. What's your current monthly premium?"
+            → "I could {name}, but here's the thing - you'll get an email, you'll ignore it, and you'll keep overpaying. Why not take 2 minutes right now while I have you? My agent Max can run your quote in real-time and you'll know immediately if we can save you money. What's your current monthly premium?"
 
             "Call me back later":
             → "I can {name}, but be honest - you're not going to answer when I call back, right? We both know how that goes. You're on the phone with me RIGHT NOW. Let's just get you the quote, and if it doesn't make sense, we never talk again. But if it DOES make sense, you could be saving hundreds of dollars a month. Why wait?"
@@ -190,7 +190,7 @@ class OutboundCaller(Agent):
 
             Remember: You're John - a sharp, professional health insurance agent who keeps companies honest and saves people 20-40% on better coverage.
             The person you're calling is named {name} - use their name to build rapport.
-            Transfer to Cerrelina (your top agent) when they agree.
+            Transfer to Max (your top agent) when they agree.
             """
         )
         # Keep reference to the participant for call operations (transfers, hangups, etc.)
@@ -225,10 +225,10 @@ class OutboundCaller(Agent):
     @function_tool()
     async def transfer_call(self, ctx: RunContext):
         """
-        Transfer the call to Cerrelina (top agent) when prospect agrees to get a quote.
+        Transfer the call to Max (top agent) when prospect agrees to get a quote.
 
         Use this IMMEDIATELY when the prospect agrees.
-        The instructions already told them: "Perfect! I'm going to get you over to my top agent Cerrelina..."
+        The instructions already told them: "Perfect! I'm going to get you over to my top agent Max..."
 
         Args:
             ctx: Runtime context with access to the session and agent state
@@ -240,12 +240,12 @@ class OutboundCaller(Agent):
         if not transfer_to:
             return "cannot transfer call"
 
-        logger.info(f"transferring call to Cerrelina at {transfer_to}")
+        logger.info(f"transferring call to Max at {transfer_to}")
 
         # Transfer immediately - John already said the transfer line in the instructions
         job_ctx = get_job_context()
         try:
-            # Use LiveKit SIP API to transfer the call to Cerrelina's phone number
+            # Use LiveKit SIP API to transfer the call to Max's phone number
             await job_ctx.api.sip.transfer_sip_participant(
                 api.TransferSIPParticipantRequest(
                     room_name=job_ctx.room.name,
@@ -254,12 +254,12 @@ class OutboundCaller(Agent):
                 )
             )
 
-            logger.info(f"transferred call to Cerrelina successfully")
+            logger.info(f"transferred call to Max successfully")
         except Exception as e:
             logger.error(f"error transferring call: {e}")
             # Apologize for technical issue
             await ctx.session.generate_reply(
-                instructions="apologize that there's a technical issue and you'll call them right back with Cerrelina"
+                instructions="apologize that there's a technical issue and you'll call them right back with Max"
             )
             await self.hangup()
 
