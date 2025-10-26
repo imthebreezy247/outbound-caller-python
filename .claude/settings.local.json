@@ -40,7 +40,9 @@
       "Bash(lk:*)",
       "Bash(pkill:*)",
       "mcp__livekit-docs__docs_search",
-      "mcp__livekit-docs__get_pages"
+      "mcp__livekit-docs__get_pages",
+      "Bash(fuser:*)",
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": []
