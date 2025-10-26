@@ -26,7 +26,7 @@ async def test_call_with_transfer(phone_to_call: str, max_phone: str):
     print(f"\nCalling: {phone_to_call}")
     print(f"Will transfer to: {max_phone}")
     print(f"\nWhen John asks about health insurance, agree to the quote.")
-    print(f"John will say: 'Perfect! I'm going to get you over to my top agent Cerrelina...'")
+    print(f"John will say: 'Perfect! I'm going to get you over to my top agent Max...'")
     print(f"Then he'll transfer you to Max at {max_phone}")
     print(f"{'='*60}\n")
 

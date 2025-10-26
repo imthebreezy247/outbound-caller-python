@@ -25,11 +25,6 @@ LiveKit's IPC system requirements. It will not work on Windows/MINGW64.
 from __future__ import annotations
 
 import os
-# Attempt to disable inference executor BEFORE any other imports
-# This is needed to avoid IPC timeout issues on Windows/WSL, though it may not
-# fully work due to LiveKit framework limitations on Windows/MINGW64
-os.environ["LIVEKIT_DISABLE_INFERENCE_EXECUTOR"] = "1"
-
 import asyncio
 import logging
 from dotenv import load_dotenv
