@@ -109,19 +109,9 @@ class OutboundCaller(Agent):
             - Sound like you're smiling - warm, friendly, and genuinely happy to talk to them
             - Speak with ENERGY and enthusiasm - you're excited about helping them save money!
             - Be conversational and natural - like talking to a friend, not reading a script
-            - Use natural speech patterns: "you know", "I mean", "listen", "hey", "look"
             - Vary your tone - don't be monotone or robotic
-            - Show genuine interest when they speak - "Oh yeah?", "Really?", "Absolutely!"
             - Sound confident but not aggressive - you KNOW you can help them
             - Keep it upbeat even when handling objections - stay positive!
-
-            Natural filler words make you sound human (use sparingly):
-            - "You know what I mean?"
-            - "I mean, honestly..."
-            - "Listen..."
-            - "Look..."
-            - "Hey, real quick..."
-            - "Right?"
 
             CRITICAL OPENING SCRIPT - FOLLOW EXACTLY:
 
@@ -162,13 +152,13 @@ class OutboundCaller(Agent):
             HANDLING OBJECTIONS - BE PERSISTENT AND SHARP:
 
             "I'm happy with my plan":
-            → "Oh that's awesome {name}! I love hearing that. But hey, real quick - when's the last time you actually compared? I mean, most people say they're happy until they realize they're overpaying by two hundred to four hundred dollars a month, you know? What if I could show you the same coverage or even better for twenty to forty percent less? Would you at least want to see the numbers? I mean, what's it hurt, right?"
+            → "That's great {name}! But when's the last time you actually compared? Most people say they're happy until they realize they're overpaying by two hundred to four hundred dollars a month. What if I could show you the same coverage or better for twenty to forty percent less? Would you at least want to see the numbers?"
 
             "I don't have time":
             → "I totally get it {name}, but that's exactly why I'm calling. Takes literally 2 minutes to run the quote. What's it hurt to at least SEE if you're overpaying? If you're already getting the best deal, great - you'll know for sure. But what if you're not?"
 
             "Not interested":
-            → "Hey, I totally get it {name}. But listen - can I ask you something? Are you saying you're not interested in potentially saving two hundred, three hundred, four hundred dollars a month on your health insurance? Because I mean, that's what we're averaging with our clients, you know? And it's completely free to check - what's the worst that happens? You find out you already have a good deal and we never talk again. Fair enough?"
+            → "I hear you {name}, but can I ask - are you saying you're not interested in potentially saving two hundred, three hundred, four hundred dollars a month on your health insurance? Because that's what we're averaging with our clients. It's free to check - what's the worst that happens, you find out you already have a good deal?"
 
             "I need to think about it":
             → "Absolutely {name}, I respect that. But think about what? It's a free quote - there's nothing to think about. Let's just run the numbers real quick, see what's available, and THEN you can think about it with actual information instead of guessing. Fair enough?"
@@ -476,21 +466,23 @@ async def entrypoint(ctx: JobContext):
     #         llm=anthropic.LLM(model="claude-sonnet-4-20250514"),  # Claude Sonnet 4 (best reasoning)
     #     )
 
-    # Using Claude with pipelined approach - WITHOUT turn_detection to avoid WSL2 timeout
+    # Using OpenAI Realtime API for lowest latency (speech-to-speech, no delays)
     session = AgentSession(
-        # turn_detection=EnglishModel(),  # DISABLED - causes WSL2 inference executor timeout
-        vad=silero.VAD.load(
-            min_silence_duration=0.3,  # Reduced from default 0.5 - faster response
-            activation_threshold=0.4,  # Lower threshold - more sensitive to speech
+        llm=openai.realtime.RealtimeModel(
+            voice="alloy",  # Natural male voice - options: alloy, echo, shimmer
+            temperature=0.8,  # Creativity level (0.6-1.0 recommended)
         ),
-        stt=deepgram.STT(),  # Deepgram speech-to-text
-        tts=cartesia.TTS(voice="228fca29-3a0a-435c-8728-5cb483251068"),  # Your selected voice
-        llm=anthropic.LLM(model="claude-sonnet-4-20250514"),  # Claude Sonnet 4
     )
 
-    # OpenAI fallback if Claude doesn't work:
+    # Claude session (commented out - has more delay):
     # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="echo", temperature=0.8),
+    #     vad=silero.VAD.load(
+    #         min_silence_duration=0.3,
+    #         activation_threshold=0.4,
+    #     ),
+    #     stt=deepgram.STT(),
+    #     tts=cartesia.TTS(voice="228fca29-3a0a-435c-8728-5cb483251068"),
+    #     llm=anthropic.LLM(model="claude-sonnet-4-20250514"),
     # )
 
     # Start the session before dialing to ensure the agent is ready when the user answers
