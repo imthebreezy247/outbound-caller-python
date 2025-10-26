@@ -10,5 +10,5 @@ if __name__ == "__main__":
     # Call Max's number, transfer back to Max (same number for testing)
     asyncio.run(dispatch_outbound_call(
         phone_number="+19415180701",
-        transfer_number="+18155308498"
+        transfer_number="+19415180701"
     ))
