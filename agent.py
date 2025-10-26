@@ -466,23 +466,23 @@ async def entrypoint(ctx: JobContext):
     #         llm=anthropic.LLM(model="claude-sonnet-4-20250514"),  # Claude Sonnet 4 (best reasoning)
     #     )
 
-    # Using Claude with optimized VAD settings for fast response
+    # Using OpenAI Realtime API - FASTEST (near-instant speech-to-speech)
     session = AgentSession(
-        vad=silero.VAD.load(
-            min_silence_duration=0.3,  # Fast response
-            activation_threshold=0.4,  # Sensitive to speech
+        llm=openai.realtime.RealtimeModel(
+            voice="alloy",  # Natural male voice
+            temperature=0.8,  # Conversational
         ),
-        stt=deepgram.STT(),  # Deepgram speech-to-text
-        tts=cartesia.TTS(voice="228fca29-3a0a-435c-8728-5cb483251068"),  # Your selected voice
-        llm=anthropic.LLM(model="claude-sonnet-4-20250514"),  # Claude Sonnet 4
     )
 
-    # OpenAI Realtime (requires valid API key):
+    # Claude (commented out - slower):
     # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(
-    #         voice="alloy",
-    #         temperature=0.8,
+    #     vad=silero.VAD.load(
+    #         min_silence_duration=0.3,
+    #         activation_threshold=0.4,
     #     ),
+    #     stt=deepgram.STT(),
+    #     tts=cartesia.TTS(voice="228fca29-3a0a-435c-8728-5cb483251068"),
+    #     llm=anthropic.LLM(model="claude-sonnet-4-20250514"),
     # )
 
     # Start the session before dialing to ensure the agent is ready when the user answers
