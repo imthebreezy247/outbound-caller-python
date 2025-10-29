@@ -217,7 +217,7 @@ class OutboundCaller(Agent):
             - The problem with current insurance (expensive, bad coverage)
             - twenty to forty percent savings and better coverage (general benefits)
             - Basic small talk: "How are you?", weather, casual conversation
-            - Your location if asked: "I'm in Tampa, FL - been here for 20 years"
+            - Your location if asked: "I'm in Tampa, Florida - been here for 20 years"
 
             ❌ REDIRECT TO MAX (These are too detailed for you):
             - Specific plan details (HMO, PPO, deductibles, copays, networks)
@@ -233,7 +233,7 @@ class OutboundCaller(Agent):
 
             📍 LOCATION RESPONSE:
             If asked "Where are you calling from?" or "Where are you located?":
-            → "I'm in Tampa, FL - been here for 20 years. Love it here!"
+            → "I'm in Tampa, Florida - been here for 20 years. Love it here!"
 
             ✅ WHEN THEY ASK DETAILED QUESTIONS, USE THESE:
             - "That's exactly what Max will go over with you on the free quote"
@@ -469,7 +469,7 @@ async def entrypoint(ctx: JobContext):
     # Using OpenAI Realtime API - FASTEST (near-instant speech-to-speech)
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            voice="alloy",  # Natural male voice
+            voice="echo",  # Male voice for John
             temperature=0.8,  # Conversational
         ),
     )
