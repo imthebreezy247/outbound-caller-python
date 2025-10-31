@@ -30,6 +30,9 @@ import logging
 from dotenv import load_dotenv
 import json
 from typing import Any
+import random
+import time
+from datetime import datetime
 
 # LiveKit core imports for real-time communication and API access
 from livekit import rtc, api
@@ -70,6 +73,61 @@ logger.setLevel(logging.INFO)
 # This is configured in your LiveKit dashboard and connects to Twilio
 outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 
+# Human-like behavior configuration
+NATURAL_FILLERS = [
+    "you know", "like", "I mean", "right", "um", "uh",
+    "well", "so", "anyway", "basically", "actually"
+]
+
+THINKING_PHRASES = [
+    "let me think...", "hmm...", "well...", "okay so...",
+    "alright...", "let's see...", "good question..."
+]
+
+AGREEMENT_PHRASES = [
+    "exactly", "absolutely", "for sure", "definitely",
+    "I hear you", "I understand", "totally", "right"
+]
+
+
+class ConversationMemory:
+    """Tracks conversation context for more natural, human-like responses."""
+
+    def __init__(self):
+        self.messages = []
+        self.sentiment = "neutral"
+        self.objections_heard = []
+        self.questions_asked = []
+        self.topics_discussed = set()
+        self.customer_traits = {}
+        self.call_start_time = time.time()
+
+    def add_message(self, speaker: str, message: str, sentiment: str = "neutral"):
+        """Add a message to conversation history."""
+        self.messages.append({
+            "speaker": speaker,
+            "message": message,
+            "timestamp": time.time(),
+            "sentiment": sentiment
+        })
+        self.sentiment = sentiment
+
+    def add_objection(self, objection: str):
+        """Track objections for better handling."""
+        self.objections_heard.append(objection)
+
+    def add_topic(self, topic: str):
+        """Track discussed topics to avoid repetition."""
+        self.topics_discussed.add(topic)
+
+    def get_call_duration(self) -> float:
+        """Get current call duration in seconds."""
+        return time.time() - self.call_start_time
+
+    def get_context_summary(self) -> str:
+        """Get a summary of the conversation for context-aware responses."""
+        return f"Call duration: {int(self.get_call_duration())}s, Objections: {len(self.objections_heard)}, Topics: {list(self.topics_discussed)}"
+
 
 class OutboundCaller(Agent):
     """
@@ -81,6 +139,7 @@ class OutboundCaller(Agent):
     Attributes:
         participant: The remote participant (person being called) in the conversation
         dial_info: Dictionary containing phone numbers and transfer information
+        memory: Conversation memory for context-aware responses
     """
 
     def __init__(
@@ -103,6 +162,18 @@ class OutboundCaller(Agent):
             You are John, a sharp and persistent health insurance sales agent. Your interface with users will be voice.
             You are a professional closer who doesn't take no for an answer - your job is to get them to agree to a FREE QUOTE.
 
+            HUMAN-LIKE BEHAVIOR - SOUND LIKE A REAL PERSON:
+
+            Use natural speech patterns to sound authentic:
+            - Add occasional fillers: "you know", "like", "I mean", "right", "um", "well" (but don't overdo it!)
+            - Use thinking phrases when considering their question: "hmm...", "let me think...", "good question..."
+            - Add brief pauses mid-sentence for natural breathing: "I work with, you know, lots of individuals..."
+            - Vary your sentence structure - don't sound scripted
+            - Occasionally stumble slightly on words or rephrase: "We can save you... I mean, most people save twenty to forty percent"
+            - Reference earlier parts of the conversation: "Like you mentioned before...", "Going back to what you said..."
+            - Show you're listening with agreement sounds: "Mm-hmm", "Right", "I hear you", "Okay"
+            - Don't be perfect - real humans have minor speech imperfections
+
             VOICE TONE & ENERGY - CRITICAL FOR SUCCESS:
 
             Your voice should be HAPPY, UPBEAT, and NATURAL at all times:
@@ -112,6 +183,7 @@ class OutboundCaller(Agent):
             - Vary your tone - don't be monotone or robotic
             - Sound confident but not aggressive - you KNOW you can help them
             - Keep it upbeat even when handling objections - stay positive!
+            - Mirror their energy level - if they're calm, be calm but positive; if they're energetic, match it
 
             CRITICAL OPENING SCRIPT - FOLLOW EXACTLY:
 
@@ -249,6 +321,8 @@ class OutboundCaller(Agent):
             Remember: You're John from Tampa, FL (20 years). You're friendly and conversational about insurance problems, but Max is the expert on specifics.
             The person you're calling is named {name} - use their name to build rapport.
             Transfer to Max (your top agent) when they agree.
+
+            CRITICAL: Be NATURAL, use fillers, pauses, and human-like speech. Don't sound like a robot or reading a script!
             """
         )
         # Keep reference to the participant for call operations (transfers, hangups, etc.)
@@ -256,6 +330,12 @@ class OutboundCaller(Agent):
 
         # Store dial information (phone numbers, transfer destination)
         self.dial_info = dial_info
+
+        # Initialize conversation memory for context-aware responses
+        self.memory = ConversationMemory()
+
+        # Store customer name for personalization
+        self.customer_name = name
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         """

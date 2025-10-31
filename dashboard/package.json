@@ -1,0 +1,56 @@
+{
+  "name": "outbound-caller-dashboard",
+  "version": "1.0.0",
+  "description": "Real-time dashboard for AI outbound calling agent",
+  "main": "electron.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "electron": "electron .",
+    "electron-dev": "concurrently \"BROWSER=none npm start\" \"wait-on http://localhost:3000 && electron .\"",
+    "package": "electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.10.0",
+    "socket.io-client": "^4.7.0",
+    "axios": "^1.6.0",
+    "lucide-react": "^0.300.0",
+    "date-fns": "^3.0.0",
+    "wavesurfer.js": "^7.5.0",
+    "framer-motion": "^10.16.0",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0",
+    "concurrently": "^8.2.0",
+    "wait-on": "^7.2.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "build": {
+    "appId": "com.outboundcaller.dashboard",
+    "productName": "Outbound Caller Dashboard",
+    "files": [
+      "build/**/*",
+      "electron.js"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    }
+  }
+}

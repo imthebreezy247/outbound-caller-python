@@ -1,0 +1,210 @@
+.calls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.call-card {
+  background: rgba(17, 24, 39, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.call-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.call-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-color: currentColor;
+}
+
+.call-card.selected {
+  border-color: currentColor;
+  box-shadow: 0 0 24px currentColor;
+}
+
+.call-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.call-info {
+  flex: 1;
+}
+
+.customer-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 0.25rem;
+}
+
+.phone-number {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  font-family: monospace;
+}
+
+.status-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.status-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-ring {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.call-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+}
+
+.status-row.warning {
+  color: #f59e0b;
+}
+
+.status-label {
+  color: #9ca3af;
+}
+
+.status-value {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.call-card-footer {
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.audio-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.audio-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.audio-label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  min-width: 60px;
+}
+
+.audio-bar-container {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.audio-bar-fill {
+  height: 100%;
+  transition: width 0.3s;
+  border-radius: 3px;
+}
+
+.audio-bar-fill.agent {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+
+.audio-bar-fill.customer {
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.empty-state h3 {
+  font-size: 1.25rem;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 0.5rem;
+  background: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+
+.icon {
+  font-size: 1.25rem;
+}
