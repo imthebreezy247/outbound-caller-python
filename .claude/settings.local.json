@@ -50,7 +50,12 @@
       "Bash(git stash show:*)",
       "Bash(mv:*)",
       "Bash(git rev-parse:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(gh --version:*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh auth status:*)",
+      "Bash(git remote add:*)"
     ],
     "deny": [],
     "ask": []
