@@ -469,8 +469,16 @@ async def entrypoint(ctx: JobContext):
     # Using OpenAI Realtime API - FASTEST (near-instant speech-to-speech)
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            voice="echo",  # Male voice for John
-            temperature=0.8,  # Conversational
+            voice="ash",  # Conversational male voice (more natural than echo)
+            # Other voice options: "verse" (casual), "alloy" (neutral), "echo" (robotic)
+            temperature=0.9,  # Higher = more natural variation in speech
+            instructions="""
+            Speak naturally with a warm, friendly tone.
+            Use casual filler words like "um", "you know", "I mean" occasionally.
+            Vary your pace - don't speak too fast or too mechanically.
+            Show enthusiasm when appropriate.
+            Sound like a real person having a conversation, not reading a script.
+            """,
         ),
     )
 
