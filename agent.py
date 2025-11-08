@@ -109,7 +109,8 @@ class OutboundCaller(Agent):
             - Sound like you're smiling - warm, friendly, and genuinely happy to talk to them
             - Speak with ENERGY and enthusiasm - you're excited about helping them save money!
             - Be conversational and natural - like talking to a friend, not reading a script
-            - Vary your tone - don't be monotone or robotic
+            - Use natural filler words occasionally like "um", "you know", "I mean" to sound human
+            - Vary your tone and pace - don't be monotone or robotic
             - Sound confident but not aggressive - you KNOW you can help them
             - Keep it upbeat even when handling objections - stay positive!
 
@@ -472,13 +473,6 @@ async def entrypoint(ctx: JobContext):
             voice="ash",  # Conversational male voice (more natural than echo)
             # Other voice options: "verse" (casual), "alloy" (neutral), "echo" (robotic)
             temperature=0.9,  # Higher = more natural variation in speech
-            instructions="""
-            Speak naturally with a warm, friendly tone.
-            Use casual filler words like "um", "you know", "I mean" occasionally.
-            Vary your pace - don't speak too fast or too mechanically.
-            Show enthusiasm when appropriate.
-            Sound like a real person having a conversation, not reading a script.
-            """,
         ),
     )
 
@@ -493,20 +487,6 @@ async def entrypoint(ctx: JobContext):
     #     llm=anthropic.LLM(model="claude-sonnet-4-20250514"),
     # )
 
-    # Start the session before dialing to ensure the agent is ready when the user answers
-    # This prevents missing the first few seconds of what the user says
-    session_started = asyncio.create_task(
-        session.start(
-            agent=agent,
-            room=ctx.room,
-            room_input_options=RoomInputOptions(
-                # Enable Krisp noise cancellation optimized for telephony
-                # This removes background noise for clearer conversations
-                noise_cancellation=noise_cancellation.BVCTelephony(),
-            ),
-        )
-    )
-
     # Initiate the outbound call via SIP trunk
     # This dials the phone number and waits for the user to answer
     try:
@@ -520,13 +500,24 @@ async def entrypoint(ctx: JobContext):
             )
         )
 
-        # Wait for both the session to finish starting and the participant to join
-        await session_started
+        # Wait for participant to join the room
         participant = await ctx.wait_for_participant(identity=participant_identity)
         logger.info(f"participant joined: {participant.identity}")
 
         # Give the agent a reference to the participant for call operations
         agent.set_participant(participant)
+
+        # Start the session AFTER participant joins to reduce delay
+        # This ensures the agent is ready immediately when the call connects
+        await session.start(
+            agent=agent,
+            room=ctx.room,
+            room_input_options=RoomInputOptions(
+                # Enable Krisp noise cancellation optimized for telephony
+                # This removes background noise for clearer conversations
+                noise_cancellation=noise_cancellation.BVCTelephony(),
+            ),
+        )
 
         # Conversation now runs automatically until:
         # - User hangs up

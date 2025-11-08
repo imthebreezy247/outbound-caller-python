@@ -47,9 +47,9 @@ async def test_call_with_transfer(phone_to_call: str, max_phone: str):
 
 if __name__ == "__main__":
     # YOUR PHONE (will receive the call from John)
-    your_phone = "+19415180701"
-    
+    your_phone = "+18155308498"
+
     # MAX'S PHONE (where call transfers when you agree to quote)
-    max_phone = "+1XXXXXXXXXX"  # ← PUT MAX'S NUMBER HERE
-    
+    max_phone = "+18155308498"  # Same number for testing
+
     asyncio.run(test_call_with_transfer(your_phone, max_phone))

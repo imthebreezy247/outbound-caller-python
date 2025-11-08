@@ -8,6 +8,7 @@ make an outbound call to the specified number.
 import os
 import json
 import asyncio
+import uuid
 from dotenv import load_dotenv
 from livekit import api
 
@@ -54,10 +55,13 @@ async def dispatch_outbound_call(phone_number: str, transfer_number: str = None)
 
     # Dispatch the job to the agent
     # This creates a room and dispatches the job to a worker
+    # Add UUID to room name to prevent conflicts with concurrent calls
+    room_name = f"outbound-call-{phone_number.replace('+', '')}-{uuid.uuid4().hex[:8]}"
+
     dispatch = await lk_api.agent_dispatch.create_dispatch(
         api.CreateAgentDispatchRequest(
             agent_name="outbound-caller",  # Must match agent_name in agent.py
-            room="outbound-call-" + phone_number.replace("+", ""),  # Unique room name
+            room=room_name,  # Unique room name with UUID
             metadata=metadata,
         )
     )
