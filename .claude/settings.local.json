@@ -59,7 +59,8 @@
       "Bash(export LIVEKIT_URL=\"wss://ai-assistant-calling-project-qfccn74t.livekit.cloud\":*)",
       "Bash(export LIVEKIT_API_KEY:*)",
       "Bash(export LIVEKIT_API_SECRET:*)",
-      "Bash(./venv-windows/Scripts/python.exe:*)"
+      "Bash(./venv-windows/Scripts/python.exe:*)",
+      "Bash(wait)"
     ],
     "deny": [],
     "ask": []

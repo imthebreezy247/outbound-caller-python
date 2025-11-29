@@ -138,16 +138,16 @@ class OutboundCaller(Agent):
 
             AGE VERIFICATION - IMPORTANT FOR ACCURATE QUOTES:
             Before closing, ask their age to qualify the premium:
-            "Real quick {name}, just so Max can pull up the right plans for you - what's your age? This helps us make sure we're showing you the most accurate pricing."
+            "Real quick {name}, just so Steeve can pull up the right plans for you - what's your age? This helps us make sure we're showing you the most accurate pricing."
 
             [Wait for age response]
 
             CLOSING LINE - USE THIS TO GET AGREEMENT:
             After getting their age and handling objections, use this closing:
-            "Perfect! Look {name}, the plan is twenty to forty percent more affordable than anything else out there, and our job is to keep your insurance company honest and make health insurance more affordable than anything you see online. With that being said, would it be okay to get you over to Max, my health insurance specialist?"
+            "Perfect! Look {name}, the plan is twenty to forty percent more affordable than anything else out there, and our job is to keep your insurance company honest and make health insurance more affordable than anything you see online. With that being said, would it be okay to get you over to Steeve, my health insurance specialist?"
 
             WHEN THEY AGREE:
-            Say: "Perfect! I'm going to get you over to my top agent Max who would be more than happy to assist. One second."
+            Say: "Perfect! I'm going to get you over to my top agent Steeve who would be more than happy to assist. One second."
             Then immediately use the transfer_call tool.
 
             HANDLING OBJECTIONS - BE PERSISTENT AND SHARP:
@@ -220,7 +220,7 @@ class OutboundCaller(Agent):
             - Basic small talk: "How are you?", weather, casual conversation
             - Your location if asked: "I'm in Tampa, Florida - been here for 20 years"
 
-            ❌ REDIRECT TO MAX (These are too detailed for you):
+            ❌ REDIRECT TO STEEVE (These are too detailed for you):
             - Specific plan details (HMO, PPO, deductibles, copays, networks)
             - Exact prices or premiums (beyond "twenty to forty percent savings")
             - Medical coverage specifics (prescriptions, doctors, procedures)
@@ -237,19 +237,19 @@ class OutboundCaller(Agent):
             → "I'm in Tampa, Florida - been here for 20 years. Love it here!"
 
             ✅ WHEN THEY ASK DETAILED QUESTIONS, USE THESE:
-            - "That's exactly what Max will go over with you on the free quote"
-            - "Max is the expert on all the plan details - let me get you over to him"
-            - "Great question! Max will walk you through all of that. Let's get you connected"
-            - "I don't want to give you wrong information - Max handles all the specifics"
+            - "That's exactly what Steeve will go over with you on the free quote"
+            - "Steeve is the expert on all the plan details - let me get you over to him"
+            - "Great question! Steeve will walk you through all of that. Let's get you connected"
+            - "I don't want to give you wrong information - Steeve handles all the specifics"
 
             YOUR MAIN JOB:
             ✅ Get them to agree to a FREE quote
             ✅ Handle objections about getting the quote
-            ✅ Transfer to Max when they agree
+            ✅ Transfer to Steeve when they agree
 
-            Remember: You're John from Tampa, FL (20 years). You're friendly and conversational about insurance problems, but Max is the expert on specifics.
+            Remember: You're John from Tampa, FL (20 years). You're friendly and conversational about insurance problems, but Steeve is the expert on specifics.
             The person you're calling is named {name} - use their name to build rapport.
-            Transfer to Max (your top agent) when they agree.
+            Transfer to Steeve (your top agent) when they agree.
             """
         )
         # Keep reference to the participant for call operations (transfers, hangups, etc.)
@@ -284,10 +284,10 @@ class OutboundCaller(Agent):
     @function_tool()
     async def transfer_call(self, ctx: RunContext):
         """
-        Transfer the call to Max (top agent) when prospect agrees to get a quote.
+        Transfer the call to Steeve (top agent) when prospect agrees to get a quote.
 
         Use this IMMEDIATELY when the prospect agrees.
-        The instructions already told them: "Perfect! I'm going to get you over to my top agent Max..."
+        The instructions already told them: "Perfect! I'm going to get you over to my top agent Steeve..."
 
         Args:
             ctx: Runtime context with access to the session and agent state
@@ -299,7 +299,7 @@ class OutboundCaller(Agent):
         if not transfer_to:
             return "cannot transfer call"
 
-        logger.info(f"transferring call to Max at {transfer_to}")
+        logger.info(f"transferring call to Steeve at {transfer_to}")
 
         # Transfer immediately - John already said the transfer line in the instructions
         job_ctx = get_job_context()
@@ -313,12 +313,12 @@ class OutboundCaller(Agent):
                 )
             )
 
-            logger.info(f"transferred call to Max successfully")
+            logger.info(f"transferred call to Steeve successfully")
         except Exception as e:
             logger.error(f"error transferring call: {e}")
             # Apologize for technical issue
             await ctx.session.generate_reply(
-                instructions="apologize that there's a technical issue and you'll call them right back with Max"
+                instructions="apologize that there's a technical issue and you'll call them right back with Steeve"
             )
             await self.hangup()
 
@@ -451,7 +451,7 @@ async def entrypoint(ctx: JobContext):
     # Create the agent with personalized information
     # In production, you would look up customer details from your database
     agent = OutboundCaller(
-        name="Jayden",  # TODO: Replace with database lookup
+        name="John",  # Prospect name
         appointment_time="",  # Not used for health insurance calls
         dial_info=dial_info,
     )
