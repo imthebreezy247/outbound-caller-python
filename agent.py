@@ -49,7 +49,7 @@ from livekit.agents import (
 
 # LiveKit plugins for various AI services
 from livekit.plugins import (
-    anthropic,  # Claude AI (Primary LLM)
+    anthropic,  # Claude AI (Primary LLM)  # type: ignore[attr-defined]
     deepgram,   # Speech-to-text
     cartesia,   # Text-to-speech
     silero,     # Voice activity detection
@@ -303,6 +303,8 @@ class OutboundCaller(Agent):
         # Transfer immediately - John already said the transfer line in the instructions
         job_ctx = get_job_context()
         try:
+            if self.participant is None:
+                return "cannot transfer call - no participant"
             # Use LiveKit SIP API to transfer the call to Max's phone number
             await job_ctx.api.sip.transfer_sip_participant(
                 api.TransferSIPParticipantRequest(
@@ -332,7 +334,8 @@ class OutboundCaller(Agent):
         Args:
             ctx: Runtime context with access to the session
         """
-        logger.info(f"ending the call for {self.participant.identity}")
+        participant_id = self.participant.identity if self.participant else "unknown"
+        logger.info(f"ending the call for {participant_id}")
 
         # Wait for the agent to finish speaking current message before hanging up
         current_speech = ctx.session.current_speech
@@ -360,8 +363,9 @@ class OutboundCaller(Agent):
         Returns:
             dict: Available appointment times
         """
+        participant_id = self.participant.identity if self.participant else "unknown"
         logger.info(
-            f"looking up availability for {self.participant.identity} on {date}"
+            f"looking up availability for {participant_id} on {date}"
         )
         # Simulate database lookup delay
         await asyncio.sleep(3)
@@ -391,8 +395,9 @@ class OutboundCaller(Agent):
         Returns:
             str: Confirmation message
         """
+        participant_id = self.participant.identity if self.participant else "unknown"
         logger.info(
-            f"confirming appointment for {self.participant.identity} on {date} at {time}"
+            f"confirming appointment for {participant_id} on {date} at {time}"
         )
         # In production: Update your scheduling database here
         return "reservation confirmed"
@@ -408,7 +413,8 @@ class OutboundCaller(Agent):
         Args:
             ctx: Runtime context
         """
-        logger.info(f"detected answering machine for {self.participant.identity}")
+        participant_id = self.participant.identity if self.participant else "unknown"
+        logger.info(f"detected answering machine for {participant_id}")
         # End the call immediately when voicemail is detected
         await self.hangup()
 
@@ -467,7 +473,7 @@ async def entrypoint(ctx: JobContext):
     #     )
 
     # Using OpenAI Realtime API - FASTEST (near-instant speech-to-speech)
-    session = AgentSession(
+    session: AgentSession = AgentSession(
         llm=openai.realtime.RealtimeModel(
             voice="echo",  # Male voice for John
             temperature=0.8,  # Conversational
