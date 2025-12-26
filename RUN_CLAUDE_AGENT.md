@@ -3,6 +3,7 @@
 ## Important: Must Use WSL2 (Not Windows)
 
 The Claude Sonnet 4 agent uses the **pipelined approach** with:
+
 - Deepgram (Speech-to-Text)
 - Claude Sonnet 4 (LLM)
 - Cartesia (Text-to-Speech)
@@ -13,32 +14,39 @@ This requires the inference executor which **only works in Unix environments (WS
 ## Setup in WSL2
 
 ### 1. Open WSL2 Terminal
+
 ```bash
 wsl
 ```
 
 ### 2. Navigate to Project
+
 ```bash
 cd /mnt/d/Coding-Projects/outbound-caller-python
 ```
 
 ### 3. Activate Virtual Environment
+
 If you haven't created one yet:
+
 ```bash
 python3 -m venv venv
 ```
 
 Then activate:
+
 ```bash
 source venv/bin/activate
 ```
 
 ### 4. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 5. Start the Agent
+
 ```bash
 ./start-agent.sh start
 ```
@@ -48,9 +56,11 @@ pip install -r requirements.txt
 ## Making a Call
 
 ### 1. Go to LiveKit Dashboard
-https://cloud.livekit.io/
+
+<https://cloud.livekit.io/>
 
 ### 2. Navigate to Your Agent
+
 - Click on your project
 - Go to "Agents" section
 - Find "outbound-caller"
@@ -58,7 +68,8 @@ https://cloud.livekit.io/
 ### 3. Click "Dispatch"
 
 ### 4. Enter Phone Number in E.164 Format
-```
+
+```text
 +19415180701
 ```
 
@@ -76,14 +87,17 @@ https://cloud.livekit.io/
 ## Troubleshooting
 
 ### "ImportError: cannot import name 'anthropic'"
+
 - You're running in Windows/MINGW64
 - Solution: Use WSL2 (see steps above)
 
 ### "TimeoutError during inference executor"
+
 - The agent needs Unix environment
 - Solution: Use WSL2
 
 ### Agent doesn't start
+
 ```bash
 # Check if dependencies are installed
 pip list | grep livekit
@@ -93,6 +107,7 @@ pip install -r requirements.txt --force-reinstall
 ```
 
 ### Phone doesn't ring
+
 - Check .env.local has correct SIP_OUTBOUND_TRUNK_ID
 - Verify phone number is in E.164 format (+1234567890)
 - Check LiveKit dashboard for error messages

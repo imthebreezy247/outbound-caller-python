@@ -1,4 +1,4 @@
-# 🚀 HOW TO RUN - AI Outbound Caller
+# HOW TO RUN - AI Outbound Caller
 
 Complete guide to run your AI-powered outbound calling system with voice testing sandbox.
 
@@ -13,7 +13,7 @@ Complete guide to run your AI-powered outbound calling system with voice testing
 
 ---
 
-## 🎯 Quick Start - 3 Components
+## Quick Start - 3 Components
 
 You need to run **3 things** to use this system:
 
@@ -23,7 +23,7 @@ You need to run **3 things** to use this system:
 
 ---
 
-## 1️⃣ START THE AI AGENT (Always Run First!)
+## 1. START THE AI AGENT (Always Run First)
 
 **Terminal 1:**
 
@@ -33,18 +33,19 @@ python agent.py start
 ```
 
 **What you should see:**
+
 ```json
 {"message": "starting worker", "level": "INFO", ...}
 {"message": "registered worker", "id": "AW_xxxxx", ...}
 ```
 
-**✅ Success:** When you see `"registered worker"` - your agent is ready!
+**Success:** When you see `"registered worker"` - your agent is ready!
 
-**⚠️ Keep this terminal running!** Don't close it.
+**Keep this terminal running!** Don't close it.
 
 ---
 
-## 2️⃣ LAUNCH THE VOICE TESTING SANDBOX (Optional - For Testing)
+## 2. LAUNCH THE VOICE TESTING SANDBOX (Optional - For Testing)
 
 **Terminal 2:**
 
@@ -55,21 +56,23 @@ pnpm dev
 ```
 
 **What you should see:**
-```
-▲ Next.js 14.x.x
+
+```text
+Next.js 14.x.x
 - Local:   http://localhost:3000
 ```
 
-**✅ Success:** Open your browser to `http://localhost:3000`
+**Success:** Open your browser to `http://localhost:3000`
 
 **Test your AI agent:**
+
 - Click the microphone button
 - Start talking to test the AI voice assistant
 - No phone calls needed - just browser testing!
 
 ---
 
-## 3️⃣ MAKE ACTUAL PHONE CALLS
+## 3. MAKE ACTUAL PHONE CALLS
 
 ### Option A: Using Command Line (Git Bash)
 
@@ -85,29 +88,33 @@ lk dispatch create \
 ```
 
 **Replace:**
+
 - `+1234567890` = Phone number to call
 - `+0987654321` = Transfer number (optional)
 
-### Option B: Using LiveKit Dashboard (Easier!)
+### Option B: Using LiveKit Dashboard (Easier)
 
-1. Go to: https://cloud.livekit.io/
+1. Go to: <https://cloud.livekit.io/>
 2. Login and select: **ai-assistant-calling-project**
-3. Navigate to: **Agents** → **Dispatch** (or **Rooms** → **Create Room**)
+3. Navigate to: **Agents** -> **Dispatch** (or **Rooms** -> **Create Room**)
 4. Fill in:
    - **Agent Name:** `outbound-caller`
    - **Metadata:**
+
      ```json
      {"phone_number": "+1234567890", "transfer_to": "+0987654321"}
      ```
+
 5. Click **Create** or **Dispatch**
 
-**✅ Success:** The phone will ring and the AI agent will start talking!
+**Success:** The phone will ring and the AI agent will start talking!
 
 ---
 
-## 🎤 What the AI Agent Does
+## What the AI Agent Does
 
 When someone answers:
+
 - Introduces itself as a dental scheduling assistant
 - Tries to confirm an appointment for "Jayden" on "next Tuesday at 3pm"
 - Can answer questions about availability
@@ -116,16 +123,19 @@ When someone answers:
 
 ---
 
-## 📊 Monitoring & Debugging
+## Monitoring and Debugging
 
 ### View Live Status
-- **Dashboard:** https://cloud.livekit.io/
+
+- **Dashboard:** <https://cloud.livekit.io/>
 - **Your Project:** ai-assistant-calling-project
 - **Check:** Agents tab to see worker status
 - **Monitor:** Rooms tab to see active calls
 
 ### Check Logs
+
 Look at Terminal 1 (where agent is running) for real-time logs:
+
 ```json
 {"message": "connecting to room", ...}
 {"message": "participant joined", ...}
@@ -133,7 +143,7 @@ Look at Terminal 1 (where agent is running) for real-time logs:
 
 ---
 
-## 🛑 Stopping Everything
+## Stopping Everything
 
 1. **Stop the Agent:** Press `Ctrl+C` in Terminal 1
 2. **Stop the Sandbox:** Press `Ctrl+C` in Terminal 2
@@ -141,7 +151,7 @@ Look at Terminal 1 (where agent is running) for real-time logs:
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Main Config File: `.env.local`
 
@@ -173,56 +183,63 @@ TWILIO_TO_NUMBER=+0987654321
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Agent Won't Start - TimeoutError on Windows/MINGW64
+
 - **Error:** `TimeoutError` during inference executor initialization
 - **Root Cause:** LiveKit agents' IPC system doesn't work on Windows/MINGW64
 - **Solutions:**
   1. **Use WSL2 (Recommended):** Run the agent in Windows Subsystem for Linux
+
      ```bash
      # In WSL2 terminal:
      cd /mnt/d/Coding-Projects/outbound-caller-python
      ./start-agent.sh start
      ```
+
   2. **Use Docker:** Run in a Linux container
   3. **Deploy to Cloud:** Use a Linux server or cloud platform
 
 - **Why this happens:** The inference executor uses Unix sockets for IPC, which aren't fully compatible with Windows
 
 ### Can't Make Calls
+
 - **Check:** Is the agent running? (Terminal 1 should show "registered worker")
 - **Check:** Is your SIP trunk active? Check dashboard
 - **Check:** Do you have Twilio credits?
 
 ### Voice Sandbox Not Working
+
 - **Check:** Is the agent running? (Terminal 1)
 - **Check:** Did you run `pnpm install` first?
 - **Check:** Browser console for errors (F12)
 
 ### Command `lk` Not Found
+
 - **Solution 1:** Use the dashboard instead (easier!)
 - **Solution 2:** Reinstall LiveKit CLI: `winget install LiveKit.LiveKitCLI`
 
 ---
 
-## 📝 Summary Checklist
+## Summary Checklist
 
 Before making your first call:
 
 - [ ] Agent is running (Terminal 1 shows "registered worker")
-- [ ] Sandbox is running (optional, Terminal 2, http://localhost:3000)
+- [ ] Sandbox is running (optional, Terminal 2, <http://localhost:3000>)
 - [ ] You have the phone number you want to call
 - [ ] You've tested in sandbox first (recommended)
 - [ ] You're ready to dispatch via CLI or dashboard
 
 ---
 
-## 🎉 Success!
+## Success
 
 You now have a fully functional AI-powered outbound calling system!
 
 **Next Steps:**
+
 - Customize the agent's greeting in `agent.py` (line 49)
 - Change the appointment details (line 179-180)
 - Adjust the AI voice/personality in `agent.py` (line 187-191)
@@ -230,10 +247,10 @@ You now have a fully functional AI-powered outbound calling system!
 
 ---
 
-## 📞 Need Help?
+## Need Help?
 
-- **LiveKit Docs:** https://docs.livekit.io/agents/
-- **Dashboard:** https://cloud.livekit.io/
+- **LiveKit Docs:** <https://docs.livekit.io/agents/>
+- **Dashboard:** <https://cloud.livekit.io/>
 - **Issues:** Check Terminal 1 logs first
 
 ---

@@ -1,16 +1,10 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
-
 # Python Outbound Call Agent
 
-<p>
-  <a href="https://docs.livekit.io/agents/overview/">LiveKit Agents Docs</a>
-  •
-  <a href="https://livekit.io/cloud">LiveKit Cloud</a>
-  •
-  <a href="https://blog.livekit.io/">Blog</a>
-</p>
+[![LiveKit logo](/.github/assets/livekit-mark.png)](https://livekit.io/)
+
+[LiveKit Agents Docs](https://docs.livekit.io/agents/overview/) |
+[LiveKit Cloud](https://livekit.io/cloud) |
+[Blog](https://blog.livekit.io/)
 
 This example demonstrates an full workflow of an AI agent that makes outbound calls. It uses LiveKit SIP and Python [Agents Framework](https://github.com/livekit/agents).
 
@@ -20,15 +14,16 @@ This example builds on concepts from the [Outbound Calls](https://docs.livekit.i
 
 ---
 
-## 🚀 **[→ HOW TO RUN - START HERE ←](./HOW_TO_RUN.md)**
+## HOW TO RUN - START HERE
 
 **Complete step-by-step guide with:**
-- ✅ Running the AI agent
-- ✅ Testing with voice sandbox
-- ✅ Making real phone calls
-- ✅ Troubleshooting guide
 
-**[Click here to get started →](./HOW_TO_RUN.md)**
+- Running the AI agent
+- Testing with voice sandbox
+- Making real phone calls
+- Troubleshooting guide
+
+**[Click here to get started](./HOW_TO_RUN.md)**
 
 ---
 
