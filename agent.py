@@ -487,6 +487,19 @@ async def entrypoint(ctx: JobContext):
     #     llm=anthropic.LLM(model="claude-sonnet-4-20250514"),
     # )
 
+    # Start the session BEFORE dialing so the agent is ready the instant someone picks up.
+    # Running it as a background task lets us dial in parallel.
+    session_started = asyncio.create_task(
+        session.start(
+            agent=agent,
+            room=ctx.room,
+            room_input_options=RoomInputOptions(
+                # Enable Krisp noise cancellation optimized for telephony
+                noise_cancellation=noise_cancellation.BVCTelephony(),
+            ),
+        )
+    )
+
     # Initiate the outbound call via SIP trunk
     # This dials the phone number and waits for the user to answer
     try:
@@ -500,24 +513,15 @@ async def entrypoint(ctx: JobContext):
             )
         )
 
+        # Ensure the session is fully started before connecting the participant
+        await session_started
+
         # Wait for participant to join the room
         participant = await ctx.wait_for_participant(identity=participant_identity)
         logger.info(f"participant joined: {participant.identity}")
 
         # Give the agent a reference to the participant for call operations
         agent.set_participant(participant)
-
-        # Start the session AFTER participant joins to reduce delay
-        # This ensures the agent is ready immediately when the call connects
-        await session.start(
-            agent=agent,
-            room=ctx.room,
-            room_input_options=RoomInputOptions(
-                # Enable Krisp noise cancellation optimized for telephony
-                # This removes background noise for clearer conversations
-                noise_cancellation=noise_cancellation.BVCTelephony(),
-            ),
-        )
 
         # Conversation now runs automatically until:
         # - User hangs up

@@ -16,7 +16,7 @@ from livekit import api
 load_dotenv(dotenv_path=".env.local")
 
 
-async def dispatch_outbound_call(phone_number: str, transfer_number: str = None):
+async def dispatch_outbound_call(phone_number: str, transfer_number: str | None = None):
     """
     Dispatch an outbound call job to the LiveKit agent.
 
@@ -66,7 +66,7 @@ async def dispatch_outbound_call(phone_number: str, transfer_number: str = None)
         )
     )
 
-    print(f"\n✓ Call dispatched successfully!")
+    print("\n✓ Call dispatched successfully!")
     print(f"  Dispatch ID: {dispatch.id}")
     print(f"  Room: {dispatch.room}")
     print(f"  Agent: {dispatch.agent_name}")
