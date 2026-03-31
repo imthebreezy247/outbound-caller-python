@@ -82,7 +82,7 @@ The agent plays "John", a health insurance sales agent from Tampa, FL:
 - Pitches a free health insurance quote (20-40% savings)
 - Handles objections persistently (multiple rebuttals per objection)
 - Asks for the prospect's age to qualify them
-- When they agree, transfers the call to "Steeve" (the specialist) via `transfer_to` number
+- When they agree, transfers the call to "David" (the specialist) via `transfer_to` number
 - Detects voicemail and hangs up automatically
 - Uses OpenAI Realtime API with the "ash" voice
 

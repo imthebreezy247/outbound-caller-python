@@ -31,6 +31,21 @@ from dotenv import load_dotenv
 import json
 from typing import Any
 
+# Dashboard integration for live event feed
+try:
+    from dashboard import agent_event as _dashboard_event
+    _HAS_DASHBOARD = True
+except ImportError:
+    _HAS_DASHBOARD = False
+
+async def _notify_dashboard(event_type: str, data: dict):
+    """Send event to dashboard if it's running."""
+    if _HAS_DASHBOARD:
+        try:
+            await _dashboard_event(event_type, data)
+        except Exception:
+            pass  # Dashboard not running, ignore
+
 # LiveKit core imports for real-time communication and API access
 from livekit import rtc, api
 
@@ -284,10 +299,10 @@ class OutboundCaller(Agent):
     @function_tool()
     async def transfer_call(self, ctx: RunContext):
         """
-        Transfer the call to Steeve (top agent) when prospect agrees to get a quote.
+        Transfer the call to David (top agent) when prospect agrees to get a quote.
 
         Use this IMMEDIATELY when the prospect agrees.
-        The instructions already told them: "Perfect! I'm going to get you over to my top agent Steeve..."
+        The instructions already told them: "Perfect! I'm going to get you over to my top agent David..."
 
         Args:
             ctx: Runtime context with access to the session and agent state
@@ -300,6 +315,10 @@ class OutboundCaller(Agent):
             return "cannot transfer call"
 
         logger.info(f"transferring call to Steeve at {transfer_to}")
+        await _notify_dashboard("call_transferring", {
+            "phone_number": self.participant.identity,
+            "transfer_to": transfer_to,
+        })
 
         # Transfer immediately - John already said the transfer line in the instructions
         job_ctx = get_job_context()
@@ -334,6 +353,10 @@ class OutboundCaller(Agent):
             ctx: Runtime context with access to the session
         """
         logger.info(f"ending the call for {self.participant.identity}")
+        await _notify_dashboard("call_ended", {
+            "phone_number": self.participant.identity,
+            "reason": "agent_ended",
+        })
 
         # Wait for the agent to finish speaking current message before hanging up
         current_speech = ctx.session.current_speech
@@ -502,6 +525,11 @@ async def entrypoint(ctx: JobContext):
 
     # Initiate the outbound call via SIP trunk
     # This dials the phone number and waits for the user to answer
+    await _notify_dashboard("call_started", {
+        "phone_number": phone_number,
+        "room": ctx.room.name,
+    })
+
     try:
         await ctx.api.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
@@ -520,6 +548,11 @@ async def entrypoint(ctx: JobContext):
         participant = await ctx.wait_for_participant(identity=participant_identity)
         logger.info(f"participant joined: {participant.identity}")
 
+        await _notify_dashboard("call_connected", {
+            "phone_number": phone_number,
+            "room": ctx.room.name,
+        })
+
         # Give the agent a reference to the participant for call operations
         agent.set_participant(participant)
 
@@ -535,6 +568,10 @@ async def entrypoint(ctx: JobContext):
             f"SIP status: {e.metadata.get('sip_status_code')} "
             f"{e.metadata.get('sip_status')}"
         )
+        await _notify_dashboard("call_error", {
+            "phone_number": phone_number,
+            "error": e.message,
+        })
         ctx.shutdown()
 
 
