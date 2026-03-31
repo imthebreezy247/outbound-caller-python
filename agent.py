@@ -38,6 +38,7 @@ try:
 except ImportError:
     _HAS_DASHBOARD = False
 
+
 async def _notify_dashboard(event_type: str, data: dict):
     """Send event to dashboard if it's running."""
     if _HAS_DASHBOARD:
@@ -64,14 +65,12 @@ from livekit.agents import (
 
 # LiveKit plugins for various AI services
 from livekit.plugins import (
-    anthropic,  # Claude AI (Primary LLM)
-    deepgram,   # Speech-to-text
-    cartesia,   # Text-to-speech
-    silero,     # Voice activity detection
     noise_cancellation,  # Background noise removal
     openai,     # OpenAI Realtime API (works without inference executor)
 )
-# from livekit.plugins.turn_detector.english import EnglishModel  # Turn detection - causes WSL2 timeout
+# Available for pipelined approach (see commented sessions below):
+# from livekit.plugins import anthropic, deepgram, cartesia, silero
+# from livekit.plugins.turn_detector.english import EnglishModel
 
 # Load environment variables from .env.local file
 # This includes API keys, LiveKit credentials, and SIP trunk configuration
@@ -314,9 +313,13 @@ class OutboundCaller(Agent):
         if not transfer_to:
             return "cannot transfer call"
 
+        if not self.participant:
+            return "no participant connected"
+
+        participant = self.participant
         logger.info(f"transferring call to Steeve at {transfer_to}")
         await _notify_dashboard("call_transferring", {
-            "phone_number": self.participant.identity,
+            "phone_number": participant.identity,
             "transfer_to": transfer_to,
         })
 
@@ -327,12 +330,12 @@ class OutboundCaller(Agent):
             await job_ctx.api.sip.transfer_sip_participant(
                 api.TransferSIPParticipantRequest(
                     room_name=job_ctx.room.name,
-                    participant_identity=self.participant.identity,
+                    participant_identity=participant.identity,
                     transfer_to=f"tel:{transfer_to}",
                 )
             )
 
-            logger.info(f"transferred call to Steeve successfully")
+            logger.info("transferred call to Steeve successfully")
         except Exception as e:
             logger.error(f"error transferring call: {e}")
             # Apologize for technical issue
@@ -352,9 +355,10 @@ class OutboundCaller(Agent):
         Args:
             ctx: Runtime context with access to the session
         """
-        logger.info(f"ending the call for {self.participant.identity}")
+        participant_id = self.participant.identity if self.participant else "unknown"
+        logger.info(f"ending the call for {participant_id}")
         await _notify_dashboard("call_ended", {
-            "phone_number": self.participant.identity,
+            "phone_number": participant_id,
             "reason": "agent_ended",
         })
 
@@ -384,8 +388,9 @@ class OutboundCaller(Agent):
         Returns:
             dict: Available appointment times
         """
+        participant_id = self.participant.identity if self.participant else "unknown"
         logger.info(
-            f"looking up availability for {self.participant.identity} on {date}"
+            f"looking up availability for {participant_id} on {date}"
         )
         # Simulate database lookup delay
         await asyncio.sleep(3)
@@ -415,8 +420,9 @@ class OutboundCaller(Agent):
         Returns:
             str: Confirmation message
         """
+        participant_id = self.participant.identity if self.participant else "unknown"
         logger.info(
-            f"confirming appointment for {self.participant.identity} on {date} at {time}"
+            f"confirming appointment for {participant_id} on {date} at {time}"
         )
         # In production: Update your scheduling database here
         return "reservation confirmed"
@@ -432,7 +438,8 @@ class OutboundCaller(Agent):
         Args:
             ctx: Runtime context
         """
-        logger.info(f"detected answering machine for {self.participant.identity}")
+        participant_id = self.participant.identity if self.participant else "unknown"
+        logger.info(f"detected answering machine for {participant_id}")
         # End the call immediately when voicemail is detected
         await self.hangup()
 

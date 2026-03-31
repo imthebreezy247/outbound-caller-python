@@ -6,7 +6,8 @@ shutil.copy("agent.py", "agent.py.backup-health-insurance")
 print("✓ Backed up current agent.py")
 
 # Read the aggressive sales script
-aggressive_script = open("agent_aggressive_template.txt").read()
+with open("agent_aggressive_template.txt") as f:
+    aggressive_script = f.read()
 
 # Write it to agent.py
 with open("agent.py", "w") as f:
