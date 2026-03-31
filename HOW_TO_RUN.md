@@ -1,244 +1,154 @@
-# 🚀 HOW TO RUN - AI Outbound Caller
+# HOW TO RUN - AI Outbound Caller (Health Insurance Sales Agent)
 
-Complete guide to run your AI-powered outbound calling system with voice testing sandbox.
+Guide to run the AI-powered outbound calling system using LiveKit + OpenAI Realtime API.
 
 ---
 
 ## Prerequisites
 
-- Python 3.11+ installed
-- Node.js and pnpm installed
-- LiveKit account and project set up
-- Git Bash or terminal
+- Python 3.11+ installed in WSL2
+- WSL2 installed and working (`wsl` from Windows terminal)
+- LiveKit account with SIP trunk configured
+- Twilio account with a phone number
+- `.env.local` file with all credentials filled in (copy from `.env.example`)
 
 ---
 
-## 🎯 Quick Start - 3 Components
+## Quick Start - 2 Steps
 
-You need to run **3 things** to use this system:
-
-1. **The AI Agent (Backend)** - Handles the phone calls
-2. **Voice Testing Sandbox (Frontend)** - Test AI voice in browser without phone calls
-3. **Dispatch Command** - Actually make phone calls
+1. **Start the AI Agent** - Runs the worker that handles calls
+2. **Dispatch a Call** - Tell the agent to dial a phone number
 
 ---
 
-## 1️⃣ START THE AI AGENT (Always Run First!)
+## Step 1: Start the AI Agent (WSL2 Required)
 
-**Terminal 1:**
+Open a WSL2 terminal and run:
 
 ```bash
-cd /c/Coding-projects/outbound-caller-python-main
-python agent.py start
+cd /mnt/d/Coding-projects/outbound-caller-python-main
+source venv-wsl/bin/activate
+python3 agent.py start
 ```
 
-**What you should see:**
-```json
-{"message": "starting worker", "level": "INFO", ...}
-{"message": "registered worker", "id": "AW_xxxxx", ...}
+You will see initialization logs like:
+
+```
+{"message": "initializing process", "level": "INFO", ...}
+{"message": "process initialized", "level": "INFO", ...}
 ```
 
-**✅ Success:** When you see `"registered worker"` - your agent is ready!
+Wait for the `"registered worker"` message - that means the agent is ready.
 
-**⚠️ Keep this terminal running!** Don't close it.
+Keep this terminal open.
 
 ---
 
-## 2️⃣ LAUNCH THE VOICE TESTING SANDBOX (Optional - For Testing)
+## Step 2: Make a Phone Call
 
-**Terminal 2:**
+### Option A: LiveKit Dashboard (Easiest)
 
-```bash
-cd /c/Coding-projects/outbound-caller-python-main/voice-test
-pnpm install
-pnpm dev
-```
+1. Go to <https://cloud.livekit.io/>
+2. Select your project
+3. Go to **Agents** > find **outbound-caller** > click **Dispatch**
+4. Enter metadata:
 
-**What you should see:**
-```
-▲ Next.js 14.x.x
-- Local:   http://localhost:3000
-```
+   ```json
+   {"phone_number": "+1XXXXXXXXXX", "transfer_to": "+1YYYYYYYYYY"}
+   ```
 
-**✅ Success:** Open your browser to `http://localhost:3000`
+   - `phone_number` = the number to call
+   - `transfer_to` = number to transfer to when prospect agrees (Steeve's number)
+5. Click **Dispatch**
 
-**Test your AI agent:**
-- Click the microphone button
-- Start talking to test the AI voice assistant
-- No phone calls needed - just browser testing!
-
----
-
-## 3️⃣ MAKE ACTUAL PHONE CALLS
-
-### Option A: Using Command Line (Git Bash)
-
-**Terminal 3:**
+### Option B: LiveKit CLI (from WSL2)
 
 ```bash
-cd /c/Coding-projects/outbound-caller-python-main
-
 lk dispatch create \
   --new-room \
   --agent-name outbound-caller \
-  --metadata '{"phone_number": "+1234567890", "transfer_to": "+0987654321"}'
+  --metadata '{"phone_number": "+1XXXXXXXXXX", "transfer_to": "+1YYYYYYYYYY"}'
 ```
 
-**Replace:**
-- `+1234567890` = Phone number to call
-- `+0987654321` = Transfer number (optional)
-
-### Option B: Using LiveKit Dashboard (Easier!)
-
-1. Go to: https://cloud.livekit.io/
-2. Login and select: **ai-assistant-calling-project**
-3. Navigate to: **Agents** → **Dispatch** (or **Rooms** → **Create Room**)
-4. Fill in:
-   - **Agent Name:** `outbound-caller`
-   - **Metadata:**
-     ```json
-     {"phone_number": "+1234567890", "transfer_to": "+0987654321"}
-     ```
-5. Click **Create** or **Dispatch**
-
-**✅ Success:** The phone will ring and the AI agent will start talking!
+The phone will ring. When answered, the AI agent "John" will start the health insurance sales pitch.
 
 ---
 
-## 🎤 What the AI Agent Does
+## What the AI Agent Does
 
-When someone answers:
-- Introduces itself as a dental scheduling assistant
-- Tries to confirm an appointment for "Jayden" on "next Tuesday at 3pm"
-- Can answer questions about availability
-- Can transfer to a human if requested
-- Detects voicemail and hangs up
+The agent plays "John", a health insurance sales agent from Tampa, FL:
 
----
-
-## 📊 Monitoring & Debugging
-
-### View Live Status
-- **Dashboard:** https://cloud.livekit.io/
-- **Your Project:** ai-assistant-calling-project
-- **Check:** Agents tab to see worker status
-- **Monitor:** Rooms tab to see active calls
-
-### Check Logs
-Look at Terminal 1 (where agent is running) for real-time logs:
-```json
-{"message": "connecting to room", ...}
-{"message": "participant joined", ...}
-```
+- Greets the prospect and asks how they're doing
+- Pitches a free health insurance quote (20-40% savings)
+- Handles objections persistently (multiple rebuttals per objection)
+- Asks for the prospect's age to qualify them
+- When they agree, transfers the call to "Steeve" (the specialist) via `transfer_to` number
+- Detects voicemail and hangs up automatically
+- Uses OpenAI Realtime API with the "ash" voice
 
 ---
 
-## 🛑 Stopping Everything
+## Configuration
 
-1. **Stop the Agent:** Press `Ctrl+C` in Terminal 1
-2. **Stop the Sandbox:** Press `Ctrl+C` in Terminal 2
-3. **Calls automatically end** when agent stops
+### .env.local (Required)
 
----
-
-## ⚙️ Configuration
-
-### Main Config File: `.env.local`
-
-Copy `.env.example` to `.env.local` and fill in your credentials:
+Copy `.env.example` to `.env.local` and fill in:
 
 ```bash
-# LiveKit Configuration (Get from https://cloud.livekit.io/)
+# LiveKit (from https://cloud.livekit.io/ > Settings)
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
-LIVEKIT_SIP_URI=sip:your-sip-uri.sip.livekit.cloud
 
-# OpenAI API Key (Required for Realtime API)
-OPENAI_API_KEY=sk-proj-your_openai_key
+# OpenAI (from https://platform.openai.com/api-keys)
+OPENAI_API_KEY=sk-proj-...
 
-# SIP Trunk ID (Get from LiveKit dashboard after trunk setup)
-SIP_OUTBOUND_TRUNK_ID=ST_your_trunk_id
+# SIP Trunk (from LiveKit dashboard after trunk setup)
+SIP_OUTBOUND_TRUNK_ID=ST_...
 
-# Optional: For alternative STT/TTS providers (if not using Realtime API)
-DEEPGRAM_API_KEY=your_deepgram_key
-CARTESIA_API_KEY=your_cartesia_key
-
-# Twilio Credentials (For trunk setup only)
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_PHONE_NUMBER=+1234567890
-TWILIO_TO_NUMBER=+0987654321
+# Optional: Only needed if switching to Claude pipelined approach
+DEEPGRAM_API_KEY=...
+CARTESIA_API_KEY=...
 ```
 
----
+### Switching to Claude Sonnet 4 (Pipelined Approach)
 
-## 🔧 Troubleshooting
-
-### Agent Won't Start - TimeoutError on Windows/MINGW64
-- **Error:** `TimeoutError` during inference executor initialization
-- **Root Cause:** LiveKit agents' IPC system doesn't work on Windows/MINGW64
-- **Solutions:**
-  1. **Use WSL2 (Recommended):** Run the agent in Windows Subsystem for Linux
-     ```bash
-     # In WSL2 terminal:
-     cd /mnt/c/Coding-projects/outbound-caller-python-main
-     ./start-agent.sh start
-     ```
-  2. **Use Docker:** Run in a Linux container
-  3. **Deploy to Cloud:** Use a Linux server or cloud platform
-
-- **Why this happens:** The inference executor uses Unix sockets for IPC, which aren't fully compatible with Windows
-
-### Can't Make Calls
-- **Check:** Is the agent running? (Terminal 1 should show "registered worker")
-- **Check:** Is your SIP trunk active? Check dashboard
-- **Check:** Do you have Twilio credits?
-
-### Voice Sandbox Not Working
-- **Check:** Is the agent running? (Terminal 1)
-- **Check:** Did you run `pnpm install` first?
-- **Check:** Browser console for errors (F12)
-
-### Command `lk` Not Found
-- **Solution 1:** Use the dashboard instead (easier!)
-- **Solution 2:** Reinstall LiveKit CLI: `winget install LiveKit.LiveKitCLI`
+In `agent.py`, comment out the OpenAI Realtime session (~line 471) and uncomment the Claude session (~line 480). The pipelined approach uses Deepgram STT + Claude LLM + Cartesia TTS. This gives better reasoning but is slower than Realtime API.
 
 ---
 
-## 📝 Summary Checklist
+## Troubleshooting
 
-Before making your first call:
+### Agent won't start / TimeoutError
 
-- [ ] Agent is running (Terminal 1 shows "registered worker")
-- [ ] Sandbox is running (optional, Terminal 2, http://localhost:3000)
-- [ ] You have the phone number you want to call
-- [ ] You've tested in sandbox first (recommended)
-- [ ] You're ready to dispatch via CLI or dashboard
+- **Cause:** LiveKit agents require Unix IPC - doesn't work on Windows/Git Bash
+- **Fix:** Must run in WSL2. Open `wsl` terminal first, then run from there
+
+### "registered worker" never appears
+
+- Check `.env.local` has valid `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
+- Check your LiveKit project is active at <https://cloud.livekit.io/>
+
+### Phone doesn't ring after dispatch
+
+- Check `SIP_OUTBOUND_TRUNK_ID` is correct in `.env.local`
+- Check SIP trunk is active in LiveKit dashboard
+- Verify phone number is E.164 format (`+1XXXXXXXXXX`)
+- Check Twilio has credits and the phone number is active
+
+### Call connects but no audio / agent doesn't speak
+
+- Check `OPENAI_API_KEY` is valid and has credits
+- Look at WSL2 terminal logs for errors
+
+### `lk` command not found
+
+- Install LiveKit CLI: `curl -sSL https://get.livekit.io/cli | bash`
+- Or just use the dashboard instead
 
 ---
 
-## 🎉 Success!
+## Stopping
 
-You now have a fully functional AI-powered outbound calling system!
-
-**Next Steps:**
-- Customize the agent's greeting in `agent.py` (line 49)
-- Change the appointment details (line 179-180)
-- Adjust the AI voice/personality in `agent.py` (line 187-191)
-- Add your own function tools for custom features
-
----
-
-## 📞 Need Help?
-
-- **LiveKit Docs:** https://docs.livekit.io/agents/
-- **Dashboard:** https://cloud.livekit.io/
-- **Issues:** Check Terminal 1 logs first
-
----
-
-**Created:** 2025-10-14
-**Project:** AI Assistant Calling - Outbound Caller Python
-**Agent Name:** outbound-caller
-**Worker ID:** Check dashboard for current ID
+- Press `Ctrl+C` in the WSL2 terminal to stop the agent
+- Active calls will end when the agent stops
