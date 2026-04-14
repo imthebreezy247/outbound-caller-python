@@ -1,37 +1,47 @@
 """
-AI Outbound Caller Agent
+Emma - Outbound Health Insurance Lead Qualifier
+=================================================
+Female AI agent that calls prospects from an Excel list, qualifies them for
+health/dental insurance quotes, collects ZIP + DOB, and warm-transfers to Chris.
 
-This agent makes automated phone calls using LiveKit's real-time communication platform.
-It uses OpenAI's Realtime API for speech-to-speech communication, providing a natural
-conversational experience for appointment confirmations and call management.
+Pipeline: Deepgram STT -> GPT-4o LLM -> ElevenLabs TTS + call-center ambience.
 
-Key Features:
-- Automated appointment confirmation calls
-- Call transfer functionality to human agents
-- Voicemail detection
-- Appointment scheduling assistance
-- Natural voice conversation using OpenAI's Realtime API
-
-Architecture:
-- Uses SIP (Session Initiation Protocol) for phone connectivity
-- LiveKit for real-time audio streaming
-- OpenAI Realtime API for speech-to-speech processing
-- Function calling for agent actions (transfer, hangup, etc.)
-
-Note: This agent requires a Unix-like environment (Linux/macOS/WSL2) due to
-LiveKit's IPC system requirements. It will not work on Windows/MINGW64.
+Call flow:
+  1. Ring -> on answer: "Hey {first_name}, how's it going today?"
+  2. Wait for reply; handle voicemail via detected_answering_machine().
+  3. Pitch: working with people overpaying on health insurance...
+  4. If interested: collect ZIP, DOB, then transfer to Chris's cell.
+  5. On "not interested" / "no" / "I'm good" x2 -> hang up, mark rejected.
+  6. Every utterance streamed to SQLite via TranscriptLogger + dashboard SSE.
 """
-
 from __future__ import annotations
 
-import os
 import asyncio
-import logging
-from dotenv import load_dotenv
 import json
+import logging
+import os
+import time
+from pathlib import Path
 from typing import Any
 
-# Dashboard integration for live event feed
+from dotenv import load_dotenv
+from livekit import api, rtc
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    JobContext,
+    RoomInputOptions,
+    RunContext,
+    WorkerOptions,
+    cli,
+    function_tool,
+    get_job_context,
+)
+from livekit.plugins import deepgram, elevenlabs, noise_cancellation, openai, silero
+from livekit.plugins.turn_detector.english import EnglishModel
+
+from transcript_logger import TranscriptLogger
+
 try:
     from dashboard import agent_event as _dashboard_event
     _HAS_DASHBOARD = True
@@ -39,555 +49,387 @@ except ImportError:
     _HAS_DASHBOARD = False
 
 
-async def _notify_dashboard(event_type: str, data: dict):
-    """Send event to dashboard if it's running."""
-    if _HAS_DASHBOARD:
-        try:
-            await _dashboard_event(event_type, data)
-        except Exception:
-            pass  # Dashboard not running, ignore
-
-# LiveKit core imports for real-time communication and API access
-from livekit import rtc, api
-
-# LiveKit agents framework for building voice agents
-from livekit.agents import (
-    AgentSession,  # Manages the conversation session
-    Agent,  # Base class for creating agents
-    JobContext,  # Provides context about the current job/call
-    function_tool,  # Decorator for creating callable functions
-    RunContext,  # Context during function execution
-    get_job_context,  # Access to current job context
-    cli,  # Command-line interface utilities
-    WorkerOptions,  # Configuration for the worker
-    RoomInputOptions,  # Configuration for room audio input
-)
-
-# LiveKit plugins for various AI services
-from livekit.plugins import (
-    noise_cancellation,  # Background noise removal
-    openai,     # OpenAI Realtime API (works without inference executor)
-)
-# Available for pipelined approach (see commented sessions below):
-# from livekit.plugins import anthropic, deepgram, cartesia, silero
-# from livekit.plugins.turn_detector.english import EnglishModel
-
-# Load environment variables from .env.local file
-# This includes API keys, LiveKit credentials, and SIP trunk configuration
 load_dotenv(dotenv_path=".env.local")
 
-# Configure logging for the agent
-logger = logging.getLogger("outbound-caller")
+logger = logging.getLogger("emma-agent")
 logger.setLevel(logging.INFO)
 
-# SIP trunk ID for making outbound calls via LiveKit
-# This is configured in your LiveKit dashboard and connects to Twilio
-outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
+OUTBOUND_TRUNK_ID = os.getenv("SIP_OUTBOUND_TRUNK_ID")
+TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # "Bella" - warm female
+AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.mp3")
+LEARNINGS_FILE = Path("learnings.md")
+
+REJECTION_PHRASES = (
+    "not interested", "no thank", "no thanks", "i'm good", "im good",
+    "i am good", "stop calling", "don't call", "do not call",
+    "remove me", "take me off", "fuck off", "leave me alone",
+)
 
 
-class OutboundCaller(Agent):
-    """
-    Outbound calling agent for appointment confirmations.
+async def _notify(event: str, data: dict) -> None:
+    if _HAS_DASHBOARD:
+        try:
+            await _dashboard_event(event, data)
+        except Exception:
+            pass
 
-    This agent handles automated phone calls to confirm appointments,
-    provide scheduling assistance, and transfer calls to human agents when needed.
 
-    Attributes:
-        participant: The remote participant (person being called) in the conversation
-        dial_info: Dictionary containing phone numbers and transfer information
-    """
+def _load_learnings() -> str:
+    if LEARNINGS_FILE.exists():
+        return LEARNINGS_FILE.read_text(encoding="utf-8").strip()
+    return ""
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        appointment_time: str,
-        dial_info: dict[str, Any],
-    ):
-        """
-        Initialize the outbound caller agent.
 
-        Args:
-            name: The customer's name for personalization
-            appointment_time: The scheduled appointment time to confirm
-            dial_info: Dictionary with 'phone_number' and 'transfer_to' keys
-        """
-        super().__init__(
-            instructions=f"""
-            You are John, a sharp and persistent health insurance sales agent. Your interface with users will be voice.
-            You are a professional closer who doesn't take no for an answer - your job is to get them to agree to a FREE QUOTE.
+class Emma(Agent):
+    """Emma - the female lead qualifier."""
 
-            VOICE TONE & ENERGY - CRITICAL FOR SUCCESS:
-
-            Your voice should be HAPPY, UPBEAT, and NATURAL at all times:
-            - Sound like you're smiling - warm, friendly, and genuinely happy to talk to them
-            - Speak with ENERGY and enthusiasm - you're excited about helping them save money!
-            - Be conversational and natural - like talking to a friend, not reading a script
-            - Use natural filler words occasionally like "um", "you know", "I mean" to sound human
-            - Vary your tone and pace - don't be monotone or robotic
-            - Sound confident but not aggressive - you KNOW you can help them
-            - Keep it upbeat even when handling objections - stay positive!
-
-            CRITICAL OPENING SCRIPT - FOLLOW EXACTLY:
-
-            1. GREETING (enthusiastic and confident):
-            "Hey! This is John. How's it going with you today?"
-
-            2. WAIT FOR THEIR RESPONSE - Let them answer
-
-            3. REASON FOR CALL (after they respond):
-            "The reason for the call today {name} is that I work with lots of individuals who are self-employed, small business owners who either pay a lot or are unhappy with their health insurance. I was just seeing if that was the case with you?"
-
-            YOUR GOAL: Get them to agree to a FREE quote. That's it. Not to sell them, just get them to see what's available.
-
-            KEY SELLING POINTS (use these naturally in conversation):
-            - We save individuals and families around twenty to forty percent on their monthly premium with HIGHER caliber coverage
-            - The plan is twenty to forty percent more affordable than anything else out there
-            - Our job is to keep your insurance company honest
-            - We make health insurance more affordable than anything you see online
-            - We keep their current insurance company honest by showing them what else is out there
-            - It's completely free to get a quote - no obligation whatsoever
-            - Most people don't realize they're overpaying until they compare
-            - Takes literally 2 minutes to see if we can save them money
-
-            AGE VERIFICATION - IMPORTANT FOR ACCURATE QUOTES:
-            Before closing, ask their age to qualify the premium:
-            "Real quick {name}, just so Steeve can pull up the right plans for you - what's your age? This helps us make sure we're showing you the most accurate pricing."
-
-            [Wait for age response]
-
-            CLOSING LINE - USE THIS TO GET AGREEMENT:
-            After getting their age and handling objections, use this closing:
-            "Perfect! Look {name}, the plan is twenty to forty percent more affordable than anything else out there, and our job is to keep your insurance company honest and make health insurance more affordable than anything you see online. With that being said, would it be okay to get you over to Steeve, my health insurance specialist?"
-
-            WHEN THEY AGREE:
-            Say: "Perfect! I'm going to get you over to my top agent Steeve who would be more than happy to assist. One second."
-            Then immediately use the transfer_call tool.
-
-            HANDLING OBJECTIONS - BE PERSISTENT AND SHARP:
-
-            "I'm happy with my plan":
-            → "That's great {name}! But when's the last time you actually compared? Most people say they're happy until they realize they're overpaying by two hundred to four hundred dollars a month. What if I could show you the same coverage or better for twenty to forty percent less? Would you at least want to see the numbers?"
-
-            "I don't have time":
-            → "I totally get it {name}, but that's exactly why I'm calling. Takes literally 2 minutes to run the quote. What's it hurt to at least SEE if you're overpaying? If you're already getting the best deal, great - you'll know for sure. But what if you're not?"
-
-            "Not interested":
-            → "I hear you {name}, but can I ask - are you saying you're not interested in potentially saving two hundred, three hundred, four hundred dollars a month on your health insurance? Because that's what we're averaging with our clients. It's free to check - what's the worst that happens, you find out you already have a good deal?"
-
-            "I need to think about it":
-            → "Absolutely {name}, I respect that. But think about what? It's a free quote - there's nothing to think about. Let's just run the numbers real quick, see what's available, and THEN you can think about it with actual information instead of guessing. Fair enough?"
-
-            "How did you get my number?":
-            → "We work with self-employed folks and small business owners specifically {name}. Are you self-employed or have your own business? [Wait for answer] Perfect, that's exactly who we help save the most money."
-
-            "I can't afford to switch":
-            → "Wait, hold on {name} - switching is FREE. There's zero cost to switch health insurance. And if we can show you BETTER coverage for LESS money, wouldn't that actually help you afford it better? That's literally the whole point of what I do."
-
-            "Send me information":
-            → "I could {name}, but here's the thing - you'll get an email, you'll ignore it, and you'll keep overpaying. Why not take 2 minutes right now while I have you? My agent Max can run your quote in real-time and you'll know immediately if we can save you money. What's your current monthly premium?"
-
-            "Call me back later":
-            → "I can {name}, but be honest - you're not going to answer when I call back, right? We both know how that goes. You're on the phone with me RIGHT NOW. Let's just get you the quote, and if it doesn't make sense, we never talk again. But if it DOES make sense, you could be saving hundreds of dollars a month. Why wait?"
-
-            "I'm not the decision maker":
-            → "I totally understand {name}. So who handles the health insurance in your family? [Get name] Okay perfect. Here's what I'll do - let me get you the quote anyway so you have the information. Then you can show [spouse name] the numbers. If they see we can save you twenty to forty percent, I bet they'll be interested. Sound good?"
-
-            "I'm on the Do Not Call list":
-            → "I understand {name}. We scrub on the DNC list, so if your phone number was on the national DO NOT CALL REGISTRY, we wouldn't have dialed you. But I respect that - one more thing though, would you be open to just hearing about how we can save you twenty to forty percent on better coverage?"
-
-            [If they say NO again]
-            → "I completely understand {name}. I appreciate your time today. You have a great rest of your day." Then use the end_call tool.
-
-            "I already shopped around":
-            → "That's awesome {name}! When did you shop around? [Get timeframe] Okay, so here's the thing - rates change constantly. What was available 6 months ago, a year ago, is totally different now. Plus we have access to plans most people don't even know exist. What's it hurt to compare one more time, especially if we can beat what you found?"
-
-            "Remove me from your list":
-            → "I can do that {name}, absolutely. But real quick before I do - can I ask, are you saying you don't want to save twenty to forty percent on your health insurance with better coverage? Because that seems like it would be worth 2 minutes of your time. If after the quote you still want off the list, no problem. But at least see the numbers first?"
-
-            CONVERSATION STYLE - SALES PROFESSIONAL:
-            - Confident, direct, and persistent - you're helping them save money
-            - Use their name frequently - builds rapport
-            - Don't accept "no" easily - every objection has a counter
-            - Assume the sale - talk like they're already getting the quote
-            - Create urgency - "while I have you", "let's do it right now"
-            - Use social proof - "most people", "our clients average"
-            - Focus on THEIR money being wasted, not your product
-            - Turn objections into questions that make them think
-            - Use "but" to pivot objections: "I hear you, BUT..."
-
-            CRITICAL RULES:
-            1. Your ONLY job is to get them to agree to a FREE quote
-            2. When they agree, immediately say the transfer line and use transfer_call
-            3. NEVER give up after one objection - try at least 2-3 times with different angles
-            4. Keep reframing - it's not about selling insurance, it's about saving THEIR money
-            5. Make it easy - "just 2 minutes", "free quote", "no obligation"
-            6. If they're truly aggressive or hostile, politely end the call
-            7. Always be professional - pushy but never rude
-
-            GUARDRAILS - STAY ON TRACK:
-
-            ✅ YOU CAN DISCUSS (Keep it general):
-            - Health insurance in general terms (costs too high, people overpaying, etc.)
-            - The problem with current insurance (expensive, bad coverage)
-            - twenty to forty percent savings and better coverage (general benefits)
-            - Basic small talk: "How are you?", weather, casual conversation
-            - Your location if asked: "I'm in Tampa, Florida - been here for 20 years"
-
-            ❌ REDIRECT TO STEEVE (These are too detailed for you):
-            - Specific plan details (HMO, PPO, deductibles, copays, networks)
-            - Exact prices or premiums (beyond "twenty to forty percent savings")
-            - Medical coverage specifics (prescriptions, doctors, procedures)
-            - How to enroll, paperwork, application process
-            - Policy comparisons or recommendations
-
-            🔄 OFF-TOPIC? REDIRECT BACK:
-            If they ask about anything NOT related to insurance (sports, politics, personal life beyond basic pleasantries):
-            → Answer briefly and politely, then pivot back: "But hey, real quick {name}, back to what I was saying about the free quote..."
-            → Keep it short and redirect to insurance
-
-            📍 LOCATION RESPONSE:
-            If asked "Where are you calling from?" or "Where are you located?":
-            → "I'm in Tampa, Florida - been here for 20 years. Love it here!"
-
-            ✅ WHEN THEY ASK DETAILED QUESTIONS, USE THESE:
-            - "That's exactly what Steeve will go over with you on the free quote"
-            - "Steeve is the expert on all the plan details - let me get you over to him"
-            - "Great question! Steeve will walk you through all of that. Let's get you connected"
-            - "I don't want to give you wrong information - Steeve handles all the specifics"
-
-            YOUR MAIN JOB:
-            ✅ Get them to agree to a FREE quote
-            ✅ Handle objections about getting the quote
-            ✅ Transfer to Steeve when they agree
-
-            Remember: You're John from Tampa, FL (20 years). You're friendly and conversational about insurance problems, but Steeve is the expert on specifics.
-            The person you're calling is named {name} - use their name to build rapport.
-            Transfer to Steeve (your top agent) when they agree.
-            """
-        )
-        # Keep reference to the participant for call operations (transfers, hangups, etc.)
-        self.participant: rtc.RemoteParticipant | None = None
-
-        # Store dial information (phone numbers, transfer destination)
+    def __init__(self, *, first_name: str, known_zip: str | None, known_dob: str | None, dial_info: dict[str, Any]):
+        self.first_name = first_name
+        self.known_zip = known_zip
+        self.known_dob = known_dob
         self.dial_info = dial_info
+        self.participant: rtc.RemoteParticipant | None = None
+        self.collected_zip: str | None = known_zip
+        self.collected_dob: str | None = known_dob
+        self.rejection_count = 0
+        self.transfer_initiated = False
+        self.outcome = "unknown"
+        self.call_id = dial_info.get("call_id", f"call_{int(time.time())}")
+        self.logger = TranscriptLogger(self.call_id, phone=dial_info.get("phone_number", ""))
 
-    def set_participant(self, participant: rtc.RemoteParticipant):
-        """
-        Set the participant reference after they join the call.
+        learnings = _load_learnings()
+        learnings_block = f"\n\nLEARNINGS FROM PAST CALLS (apply these):\n{learnings}\n" if learnings else ""
 
-        Args:
-            participant: The remote participant who answered the call
-        """
-        self.participant = participant
+        known_context = []
+        if known_zip:
+            known_context.append(f"Their ZIP code is already on file: {known_zip} - do NOT ask for it again.")
+        if known_dob:
+            known_context.append(f"Their date of birth is already on file: {known_dob} - do NOT ask for it again.")
+        known_block = "\n".join(known_context)
 
-    async def hangup(self):
-        """
-        End the call by deleting the LiveKit room.
+        super().__init__(instructions=f"""
+You are Emma, a warm, upbeat, slightly flirty young woman working at a health insurance call center.
+You sound cute and friendly - not sales-y or pushy. You laugh softly, use natural fillers ("um", "you know",
+"like"), and occasionally let out a small breath. You are talking to a prospect over the phone.
 
-        This terminates the call and cleans up all connections.
-        The room deletion triggers automatic disconnection of all participants.
-        """
-        job_ctx = get_job_context()
-        await job_ctx.api.room.delete_room(
-            api.DeleteRoomRequest(
-                room=job_ctx.room.name,
-            )
-        )
+YOU ARE A HUMAN. Never say you are an AI, bot, or automated system. If asked, deflect warmly:
+"Haha no I'm Emma, I'm actually calling from our office in DC."
+
+PROSPECT: {first_name}
+{known_block}
+
+=== STRICT CALL FLOW ===
+
+STEP 1 - OPENING (say this EXACTLY, with warmth and a smile in your voice):
+"Hey {first_name}! How's it going today?"
+Then STOP and wait for their reply. Do not continue until they respond.
+
+STEP 2 - AFTER THEIR REPLY:
+Respond briefly and warmly to whatever they said (e.g., "Aww good, glad to hear!" or "Oh no, rough day?
+I get it."). Then pivot:
+"So I was just reaching out because I work with a lot of people who are either paying way too much
+or just unhappy with their health insurance - I was wondering if that's kinda the case with you?"
+Then STOP and wait.
+
+STEP 3 - QUALIFY:
+- If they say YES / maybe / "yeah it's expensive" / any interest signal -> go to STEP 4.
+- If they say they're happy / have great coverage -> one soft follow-up:
+  "Totally fair! Just real quick though, when's the last time you actually compared rates? We're
+  usually saving people like twenty to forty percent for the same or better coverage."
+  If still a firm no -> increment rejection, politely close (see REJECTION RULES).
+
+STEP 4 - COLLECT ZIP (only if not already known):
+"Perfect! Let me pull up what's available in your area real quick. What's your zip code?"
+Wait for reply. When they give it, call the tool `save_zip` with the 5 digits.
+
+STEP 5 - COLLECT DOB (only if not already known):
+"Got it, and just to get you accurate pricing - what's your date of birth?"
+Wait for reply. When they give it, call the tool `save_dob` with the date.
+
+STEP 6 - CONFIRM INTEREST + TRANSFER:
+"Awesome {first_name}, so what I'm gonna do - I'm gonna get you over to Chris, he's our licensed
+specialist and he'll run your exact quote, like literally takes two minutes. Cool?"
+If they say yes / okay / sure -> IMMEDIATELY call the `transfer_call` tool. Do not keep talking.
+If they hesitate -> "It's totally free, no obligation at all, and if the numbers don't work you just
+hang up. Sound good?" Then try transfer again.
+
+=== REJECTION RULES (CRITICAL) ===
+
+Track rejection signals: "not interested", "no", "I'm good", "stop calling", "remove me", etc.
+
+- 1st clear rejection: ONE soft re-frame attempt, short and light. Example:
+  "Totally hear you - can I just ask, is it because you already compared recently, or more just
+  you're busy right now?"
+- 2nd rejection OR hostile tone OR "don't call me again": IMMEDIATELY call `end_call` tool with
+  reason="rejected". Say: "No worries {first_name}, have a great day!" then hang up. Do NOT push.
+
+If they say "take me off your list" / "DNC" / "do not call": call `end_call` with reason="dnc"
+immediately. Say: "Absolutely, I'll take care of that. Sorry to bother you!" and hang up.
+
+=== VOICEMAIL ===
+If you hear "leave a message after the beep", "you've reached the voicemail of", a long automated
+greeting, or no response for 8+ seconds after ringing: call `detected_answering_machine` tool
+immediately. Do not leave a message.
+
+=== STYLE RULES ===
+- Keep EVERY turn under 2 sentences unless explaining.
+- Use their first name {first_name} 2-3 times total (not every sentence).
+- Sprinkle breaths, "um", "like", soft laughs ("haha", "hehe") - sound 24 years old, not 40.
+- Never mention specific plans, HMO/PPO, deductibles, networks - that's Chris's job.
+- Never quote exact prices. Always say "twenty to forty percent savings" if pressed.
+- If asked "where are you calling from": "Our office is in DC, I'm loving the weather here lately!"
+- If asked "how'd you get my number": "We work with folks who've looked into coverage options
+  online - are you self-employed or on a family plan?" Then pivot back to STEP 3.
+
+{learnings_block}
+""")
+
+    def set_participant(self, p: rtc.RemoteParticipant) -> None:
+        self.participant = p
+
+    # ---------- Utilities ----------
+    async def _hangup(self) -> None:
+        ctx = get_job_context()
+        try:
+            await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+        except Exception as e:
+            logger.error(f"hangup error: {e}")
+
+    async def on_user_turn_completed(self, chat_ctx, new_message) -> None:
+        """Hook: log every user utterance + detect auto-rejection."""
+        text = (new_message.text_content or "").lower()
+        self.logger.log_turn("user", new_message.text_content or "")
+
+        if self.transfer_initiated:
+            return
+
+        if any(phrase in text for phrase in REJECTION_PHRASES):
+            self.rejection_count += 1
+            logger.info(f"rejection #{self.rejection_count}: {text!r}")
+            if self.rejection_count >= 2 or "do not call" in text or "don't call" in text or "remove me" in text:
+                self.outcome = "rejected"
+                await _notify("call_rejected", {"phone": self.participant.identity if self.participant else "", "text": text})
+
+    # ---------- Function tools ----------
+    @function_tool()
+    async def save_zip(self, ctx: RunContext, zip_code: str) -> str:
+        """Save prospect's 5-digit US ZIP code."""
+        z = "".join(c for c in zip_code if c.isdigit())[:5]
+        self.collected_zip = z
+        self.logger.set_field("zip", z)
+        await _notify("zip_captured", {"call_id": self.call_id, "zip": z})
+        return f"zip {z} saved"
 
     @function_tool()
-    async def transfer_call(self, ctx: RunContext):
-        """
-        Transfer the call to David (top agent) when prospect agrees to get a quote.
+    async def save_dob(self, ctx: RunContext, date_of_birth: str) -> str:
+        """Save prospect's date of birth (any format)."""
+        self.collected_dob = date_of_birth.strip()
+        self.logger.set_field("dob", self.collected_dob)
+        await _notify("dob_captured", {"call_id": self.call_id, "dob": self.collected_dob})
+        return f"dob {self.collected_dob} saved"
 
-        Use this IMMEDIATELY when the prospect agrees.
-        The instructions already told them: "Perfect! I'm going to get you over to my top agent David..."
-
-        Args:
-            ctx: Runtime context with access to the session and agent state
-
-        Returns:
-            str: Status message ("cannot transfer call" if no transfer number configured)
-        """
-        transfer_to = self.dial_info["transfer_to"]
-        if not transfer_to:
-            return "cannot transfer call"
-
+    @function_tool()
+    async def transfer_call(self, ctx: RunContext) -> str:
+        """Warm-transfer the live call to Chris's cell via SIP REFER."""
+        if self.transfer_initiated:
+            return "already transferring"
+        if not TRANSFER_TO:
+            return "no transfer number configured"
         if not self.participant:
-            return "no participant connected"
+            return "no participant"
 
-        participant = self.participant
-        logger.info(f"transferring call to Steeve at {transfer_to}")
-        await _notify_dashboard("call_transferring", {
-            "phone_number": participant.identity,
-            "transfer_to": transfer_to,
+        self.transfer_initiated = True
+        self.outcome = "transferred"
+        logger.info(f"transferring {self.participant.identity} -> {TRANSFER_TO}")
+        await _notify("call_transferring", {
+            "call_id": self.call_id,
+            "phone": self.participant.identity,
+            "transfer_to": TRANSFER_TO,
         })
 
-        # Transfer immediately - John already said the transfer line in the instructions
         job_ctx = get_job_context()
         try:
-            # Use LiveKit SIP API to transfer the call to Max's phone number
             await job_ctx.api.sip.transfer_sip_participant(
                 api.TransferSIPParticipantRequest(
                     room_name=job_ctx.room.name,
-                    participant_identity=participant.identity,
-                    transfer_to=f"tel:{transfer_to}",
+                    participant_identity=self.participant.identity,
+                    transfer_to=f"tel:{TRANSFER_TO}",
+                    play_dialtone=True,
                 )
             )
-
-            logger.info("transferred call to Steeve successfully")
+            return "transferred"
         except Exception as e:
-            logger.error(f"error transferring call: {e}")
-            # Apologize for technical issue
+            logger.error(f"transfer failed: {e}")
+            self.transfer_initiated = False
+            self.outcome = "transfer_failed"
             await ctx.session.generate_reply(
-                instructions="apologize that there's a technical issue and you'll call them right back with Steeve"
+                instructions=f"apologize warmly that there's a technical issue and say Chris will call {self.first_name} back within 5 minutes"
             )
-            await self.hangup()
+            await asyncio.sleep(3)
+            await self._hangup()
+            return f"error: {e}"
 
     @function_tool()
-    async def end_call(self, ctx: RunContext):
-        """
-        End the call when the user is ready to hang up.
-
-        This tool is called by the AI when the conversation has concluded.
-        It ensures the agent finishes speaking before disconnecting.
-
-        Args:
-            ctx: Runtime context with access to the session
-        """
-        participant_id = self.participant.identity if self.participant else "unknown"
-        logger.info(f"ending the call for {participant_id}")
-        await _notify_dashboard("call_ended", {
-            "phone_number": participant_id,
-            "reason": "agent_ended",
+    async def end_call(self, ctx: RunContext, reason: str = "completed") -> str:
+        """End the call. reason: rejected | dnc | completed | voicemail"""
+        self.outcome = reason
+        logger.info(f"ending call ({reason}) for {self.participant.identity if self.participant else '?'}")
+        await _notify("call_ended", {
+            "call_id": self.call_id,
+            "phone": self.participant.identity if self.participant else "",
+            "reason": reason,
         })
-
-        # Wait for the agent to finish speaking current message before hanging up
-        current_speech = ctx.session.current_speech
-        if current_speech:
-            await current_speech.wait_for_playout()
-
-        await self.hangup()
+        cs = ctx.session.current_speech
+        if cs:
+            await cs.wait_for_playout()
+        await self._hangup()
+        return "ended"
 
     @function_tool()
-    async def look_up_availability(
-        self,
-        ctx: RunContext,
-        date: str,
-    ):
-        """
-        Look up available appointment times for rescheduling.
-
-        This is a placeholder function that simulates checking a scheduling system.
-        In production, this would query your actual appointment database.
-
-        Args:
-            ctx: Runtime context
-            date: The date to check availability for (in natural language)
-
-        Returns:
-            dict: Available appointment times
-        """
-        participant_id = self.participant.identity if self.participant else "unknown"
-        logger.info(
-            f"looking up availability for {participant_id} on {date}"
-        )
-        # Simulate database lookup delay
-        await asyncio.sleep(3)
-        # Return mock availability data - replace with real database query
-        return {
-            "available_times": ["1pm", "2pm", "3pm"],
-        }
-
-    @function_tool()
-    async def confirm_appointment(
-        self,
-        ctx: RunContext,
-        date: str,
-        time: str,
-    ):
-        """
-        Confirm an appointment for a specific date and time.
-
-        This tool is called when the user confirms or reschedules their appointment.
-        In production, this would update your scheduling system.
-
-        Args:
-            ctx: Runtime context
-            date: The appointment date
-            time: The appointment time
-
-        Returns:
-            str: Confirmation message
-        """
-        participant_id = self.participant.identity if self.participant else "unknown"
-        logger.info(
-            f"confirming appointment for {participant_id} on {date} at {time}"
-        )
-        # In production: Update your scheduling database here
-        return "reservation confirmed"
-
-    @function_tool()
-    async def detected_answering_machine(self, ctx: RunContext):
-        """
-        Handle voicemail detection.
-
-        This tool is called by the AI when it detects that the call reached voicemail
-        instead of a live person. The agent should call this AFTER hearing the voicemail greeting.
-
-        Args:
-            ctx: Runtime context
-        """
-        participant_id = self.participant.identity if self.participant else "unknown"
-        logger.info(f"detected answering machine for {participant_id}")
-        # End the call immediately when voicemail is detected
-        await self.hangup()
+    async def detected_answering_machine(self, ctx: RunContext) -> str:
+        """Voicemail detected - hang up immediately, no message."""
+        self.outcome = "voicemail"
+        logger.info("voicemail detected")
+        await _notify("call_voicemail", {"call_id": self.call_id})
+        await self._hangup()
+        return "voicemail"
 
 
-async def entrypoint(ctx: JobContext):
-    """
-    Main entrypoint for handling outbound calls.
+async def _play_ambience(room: rtc.Room) -> asyncio.Task | None:
+    """Mix low-volume call-center BG into the room so it doesn't sound sterile."""
+    path = Path(AMBIENCE_PATH)
+    if not path.exists():
+        logger.warning(f"ambience file missing: {path}")
+        return None
 
-    This function is called by the LiveKit agents framework when a new job (call)
-    is dispatched. It sets up the call, initializes the AI agent, and manages the
-    complete call lifecycle from dialing to completion.
+    source = rtc.AudioSource(sample_rate=48000, num_channels=1)
+    track = rtc.LocalAudioTrack.create_audio_track("call-center-bg", source)
+    await room.local_participant.publish_track(
+        track,
+        rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
+    )
 
-    Workflow:
-    1. Connect to the LiveKit room
-    2. Parse call metadata (phone number, transfer info)
-    3. Create and configure the AI agent
-    4. Set up the session with OpenAI Realtime API
-    5. Start the session (begins loading models)
-    6. Dial the phone number via SIP
-    7. Wait for the user to answer
-    8. Connect the participant to the agent
-    9. Let the conversation run until completion
+    async def _loop():
+        import wave
+        # Expect 48kHz mono WAV for zero-dep streaming; MP3s should be pre-converted.
+        wav_path = path.with_suffix(".wav") if path.suffix != ".wav" else path
+        if not wav_path.exists():
+            logger.warning(f"ambience WAV missing: {wav_path}")
+            return
+        gain = float(os.getenv("AMBIENCE_GAIN", "0.12"))
+        while True:
+            with wave.open(str(wav_path), "rb") as wf:
+                sr = wf.getframerate()
+                chunk_frames = int(sr * 0.02)  # 20ms
+                while True:
+                    data = wf.readframes(chunk_frames)
+                    if not data:
+                        break
+                    # attenuate in-place
+                    import audioop
+                    data = audioop.mul(data, 2, gain)
+                    frame = rtc.AudioFrame(
+                        data=data,
+                        sample_rate=sr,
+                        num_channels=1,
+                        samples_per_channel=chunk_frames,
+                    )
+                    await source.capture_frame(frame)
 
-    Args:
-        ctx: Job context providing access to room, API, and job metadata
-    """
+    return asyncio.create_task(_loop())
+
+
+async def entrypoint(ctx: JobContext) -> None:
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
 
-    # Parse metadata passed during dispatch containing call information
-    # dial_info structure:
-    # {
-    #     "phone_number": "+1234567890",  # Number to call
-    #     "transfer_to": "+0987654321"    # Human agent number for transfers
-    # }
     dial_info = json.loads(ctx.job.metadata)
-    participant_identity = phone_number = dial_info["phone_number"]
+    phone_number = dial_info["phone_number"]
+    first_name = dial_info.get("first_name", "there")
+    known_zip = dial_info.get("zip")
+    known_dob = dial_info.get("dob")
+    call_id = dial_info.get("call_id", f"call_{int(time.time())}")
 
-    # Create the agent with personalized information
-    # In production, you would look up customer details from your database
-    agent = OutboundCaller(
-        name="John",  # Prospect name
-        appointment_time="",  # Not used for health insurance calls
-        dial_info=dial_info,
+    agent = Emma(
+        first_name=first_name,
+        known_zip=known_zip,
+        known_dob=known_dob,
+        dial_info={**dial_info, "call_id": call_id},
     )
 
-    # Configure the session using Claude Sonnet 4 with Deepgram STT and Cartesia TTS
-    # This provides superior reasoning and natural conversation using the pipelined approach
-    # Voice: Cartesia provides natural-sounding male voice optimized for health insurance discussions
-    #     session = AgentSession(
-    #         turn_detection=EnglishModel(),  # Detects when user finishes speaking
-    #         vad=silero.VAD.load(),  # Voice activity detection for better turn-taking
-    #         stt=deepgram.STT(),  # Deepgram speech-to-text (fast and accurate)
-    #         tts=cartesia.TTS(voice="228fca29-3a0a-435c-8728-5cb483251068"),  # Your selected Cartesia voice
-    #         llm=anthropic.LLM(model="claude-sonnet-4-20250514"),  # Claude Sonnet 4 (best reasoning)
-    #     )
-
-    # Using OpenAI Realtime API - FASTEST (near-instant speech-to-speech)
     session = AgentSession(
-        llm=openai.realtime.RealtimeModel(
-            voice="ash",  # Conversational male voice (more natural than echo)
-            # Other voice options: "verse" (casual), "alloy" (neutral), "echo" (robotic)
-            temperature=0.9,  # Higher = more natural variation in speech
+        turn_detection=EnglishModel(),
+        vad=silero.VAD.load(min_silence_duration=0.25, activation_threshold=0.45),
+        stt=deepgram.STT(model="nova-3", language="en-US", filler_words=True, punctuate=True),
+        llm=openai.LLM(model="gpt-4o", temperature=0.7),
+        tts=elevenlabs.TTS(
+            voice_id=ELEVENLABS_VOICE_ID,
+            model="eleven_turbo_v2_5",
+            voice_settings=elevenlabs.VoiceSettings(
+                stability=0.45,
+                similarity_boost=0.75,
+                style=0.55,
+                use_speaker_boost=True,
+            ),
         ),
     )
 
-    # Claude (commented out - slower):
-    # session = AgentSession(
-    #     vad=silero.VAD.load(
-    #         min_silence_duration=0.3,
-    #         activation_threshold=0.4,
-    #     ),
-    #     stt=deepgram.STT(),
-    #     tts=cartesia.TTS(voice="228fca29-3a0a-435c-8728-5cb483251068"),
-    #     llm=anthropic.LLM(model="claude-sonnet-4-20250514"),
-    # )
+    # Hook agent transcript -> log assistant speech too
+    @session.on("conversation_item_added")
+    def _on_item(ev):
+        try:
+            item = ev.item
+            if item.role == "assistant":
+                agent.logger.log_turn("assistant", item.text_content or "")
+        except Exception:
+            pass
 
-    # Start the session BEFORE dialing so the agent is ready the instant someone picks up.
-    # Running it as a background task lets us dial in parallel.
     session_started = asyncio.create_task(
         session.start(
             agent=agent,
             room=ctx.room,
-            room_input_options=RoomInputOptions(
-                # Enable Krisp noise cancellation optimized for telephony
-                noise_cancellation=noise_cancellation.BVCTelephony(),
-            ),
+            room_input_options=RoomInputOptions(noise_cancellation=noise_cancellation.BVCTelephony()),
         )
     )
 
-    # Initiate the outbound call via SIP trunk
-    # This dials the phone number and waits for the user to answer
-    await _notify_dashboard("call_started", {
-        "phone_number": phone_number,
-        "room": ctx.room.name,
-    })
+    await _notify("call_started", {"call_id": call_id, "phone": phone_number, "first_name": first_name, "room": ctx.room.name})
 
     try:
         await ctx.api.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
                 room_name=ctx.room.name,
-                sip_trunk_id=outbound_trunk_id,  # Configured SIP trunk ID
-                sip_call_to=phone_number,  # Number to dial
-                participant_identity=participant_identity,  # Unique identifier
-                wait_until_answered=True,  # Block until call is answered or fails
+                sip_trunk_id=OUTBOUND_TRUNK_ID,
+                sip_call_to=phone_number,
+                participant_identity=phone_number,
+                wait_until_answered=True,
             )
         )
-
-        # Ensure the session is fully started before connecting the participant
         await session_started
 
-        # Wait for participant to join the room
-        participant = await ctx.wait_for_participant(identity=participant_identity)
+        participant = await ctx.wait_for_participant(identity=phone_number)
         logger.info(f"participant joined: {participant.identity}")
-
-        await _notify_dashboard("call_connected", {
-            "phone_number": phone_number,
-            "room": ctx.room.name,
-        })
-
-        # Give the agent a reference to the participant for call operations
         agent.set_participant(participant)
 
-        # Conversation now runs automatically until:
-        # - User hangs up
-        # - Agent calls end_call() or hangup()
-        # - Error occurs
+        # Start call-center ambience AFTER pickup
+        ambience_task = await _play_ambience(ctx.room)
+
+        await _notify("call_connected", {"call_id": call_id, "phone": phone_number})
+
+        # Shutdown hook - finalize transcript on room close
+        async def _finalize():
+            agent.logger.finalize(outcome=agent.outcome, zip_code=agent.collected_zip, dob=agent.collected_dob)
+            if ambience_task:
+                ambience_task.cancel()
+
+        ctx.add_shutdown_callback(_finalize)
 
     except api.TwirpError as e:
-        # Handle SIP errors (busy, no answer, invalid number, etc.)
-        logger.error(
-            f"error creating SIP participant: {e.message}, "
-            f"SIP status: {e.metadata.get('sip_status_code')} "
-            f"{e.metadata.get('sip_status')}"
-        )
-        await _notify_dashboard("call_error", {
-            "phone_number": phone_number,
-            "error": e.message,
-        })
+        logger.error(f"SIP error: {e.message} / {e.metadata.get('sip_status_code')} {e.metadata.get('sip_status')}")
+        await _notify("call_error", {"call_id": call_id, "phone": phone_number, "error": e.message, "sip_status": e.metadata.get("sip_status_code")})
+        agent.logger.finalize(outcome=f"sip_error:{e.metadata.get('sip_status_code')}", zip_code=None, dob=None)
         ctx.shutdown()
 
 
 if __name__ == "__main__":
-    # Start the LiveKit agents worker
-    # This runs continuously, waiting for jobs to be dispatched
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,  # Function to call for each job
-            agent_name="outbound-caller",  # Name used when dispatching jobs
-        )
-    )
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, agent_name="emma-health"))

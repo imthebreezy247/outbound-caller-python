@@ -61,9 +61,14 @@
       "Bash(export LIVEKIT_API_SECRET:*)",
       "Bash(./venv-windows/Scripts/python.exe:*)",
       "Bash(wait)",
-      "Bash(git submodule:*)"
+      "Bash(git submodule:*)",
+      "Read(//c/My-Projects/email-campaign-revised/**)",
+      "Read(//c/Users/cjsin/.claude/plans/**)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\Users\\cjsin\\.claude\\plans"
+    ]
   }
 }
