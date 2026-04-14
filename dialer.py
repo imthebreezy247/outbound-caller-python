@@ -70,8 +70,39 @@ def normalize_phone(raw: str | int | float) -> str | None:
     return None
 
 
+def _pick_sheet(path: Path) -> str:
+    """Pick the best sheet: prefer 'Sheet1' / largest sheet with a phone-like column."""
+    xl = pd.ExcelFile(path)
+    candidates = []
+    for name in xl.sheet_names:
+        try:
+            head = pd.read_excel(path, sheet_name=name, nrows=1)
+            cols = {c.lower().strip().replace(" ", "_") for c in head.columns}
+            has_phone = any(c in cols for c in COLUMN_ALIASES["phone"])
+            n_rows = xl.book[name].max_row if hasattr(xl, "book") else len(pd.read_excel(path, sheet_name=name))
+            candidates.append((has_phone, n_rows, name))
+        except Exception:
+            continue
+    candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return candidates[0][2] if candidates else xl.sheet_names[0]
+
+
+def _clean_numeric_string(v: Any) -> str | None:
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    s = str(v).strip()
+    return s or None
+
+
 def load_contacts(path: Path) -> list[dict]:
-    df = pd.read_excel(path) if path.suffix.lower() in (".xlsx", ".xls") else pd.read_csv(path)
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        sheet = _pick_sheet(path)
+        df = pd.read_excel(path, sheet_name=sheet, dtype={"ZIP": str, "zip": str, "Phone Number": str, "phone": str, "DOB": str, "dob": str}, engine="openpyxl")
+        print(f"reading sheet '{sheet}' ({len(df)} rows)")
+    else:
+        df = pd.read_csv(path, dtype=str)
     df = _canonicalize_columns(df)
     if "phone" not in df.columns:
         raise ValueError(f"No phone column found. Columns: {list(df.columns)}")
@@ -83,12 +114,16 @@ def load_contacts(path: Path) -> list[dict]:
         phone = normalize_phone(row.get("phone"))
         if not phone:
             continue
+        fn_raw = row.get("first_name")
+        fn = "there" if (fn_raw is None or (isinstance(fn_raw, float) and pd.isna(fn_raw))) else str(fn_raw).strip().split()[0]
+        fn = fn.title() if fn else "there"
         contact = {
-            "first_name": str(row.get("first_name") or "there").strip().split()[0],
+            "first_name": fn,
             "phone_number": phone,
-            "zip": str(row["zip"]).strip() if "zip" in df.columns and pd.notna(row.get("zip")) else None,
-            "dob": str(row["dob"]).strip() if "dob" in df.columns and pd.notna(row.get("dob")) else None,
-            "email": str(row["email"]).strip() if "email" in df.columns and pd.notna(row.get("email")) else None,
+            "zip": (re.sub(r"\D", "", _clean_numeric_string(row.get("zip")) or "")[:5] or None) if "zip" in df.columns else None,
+            "dob": _clean_numeric_string(row.get("dob")) if "dob" in df.columns else None,
+            "email": str(row["email"]).strip().lower() if "email" in df.columns and pd.notna(row.get("email")) else None,
+            "state": str(row["state"]).strip() if "state" in df.columns and pd.notna(row.get("state")) else None,
         }
         contacts.append(contact)
     return contacts

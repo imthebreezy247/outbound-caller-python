@@ -48,6 +48,21 @@ uvicorn dashboard:app --host 0.0.0.0 --port 8080
 python dialer.py leads.xlsx --concurrent 2
 ```
 
+## Your current list: `alfano-chris-list-needs-scrub-04-13-26.xlsx`
+
+- Sheet: `Sheet1` (auto-selected; "Claude Log" sheet ignored)
+- Rows: 95,937 → **95,864 valid contacts** after phone normalization (73 rejected for invalid phone format)
+- Top states: TX (19.4k), FL (13.3k), GA (6.4k), IL (5.5k), NC (4.7k)
+- DOB present on 18,321 rows (Emma skips asking when available)
+- **1,335 duplicate phone numbers** still present despite the scrub — add `--dedupe` if you want to drop them (or run a second pass through the same process that produced this file)
+- **Scrub against the National DNC Registry** before dialing. 95k TCPA-unscrubbed dials is a ~$500/violation exposure.
+
+Starter command (safe: 25 calls, 2 concurrent, dry-run first):
+```
+python dialer.py alfano-chris-list-needs-scrub-04-13-26.xlsx --limit 25 --concurrent 2 --dry-run
+python dialer.py alfano-chris-list-needs-scrub-04-13-26.xlsx --limit 25 --concurrent 2
+```
+
 ## Excel columns (case-insensitive)
 
 | column       | required | notes                                    |
