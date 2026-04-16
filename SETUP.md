@@ -11,7 +11,7 @@ tunes the prompt automatically.
 Excel -> dialer.py -> LiveKit agent dispatch -> Twilio SIP trunk -> Prospect phone
                                     |
                         Emma (agent.py, worker process)
-                        Deepgram STT -> GPT-4o -> ElevenLabs TTS (+ ambience mix)
+                        Deepgram STT -> GPT-4o -> OpenAI TTS (gpt-4o-mini-tts, + ambience mix)
                                     |
                         TranscriptLogger (SQLite: calls.db)
                                     |
@@ -23,7 +23,7 @@ Excel -> dialer.py -> LiveKit agent dispatch -> Twilio SIP trunk -> Prospect pho
 1. `pip install -r requirements.txt`
 2. Copy `.env.example` -> `.env.local`, fill:
    - LiveKit creds (already set from your existing trunk)
-   - `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`
+   - `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`
    - `TRANSFER_TO_NUMBER` = your cell in E.164 (e.g. `+12025551234`)
 3. Generate the placeholder ambience (or drop a real one at `assets/call_center_bg.wav`):
    ```
@@ -119,14 +119,17 @@ Cron example: `0 3 * * * cd /path/to/project && python learnings.py && pkill -f 
 
 In `.env.local`:
 
-- `ELEVENLABS_VOICE_ID` - try `EXAVITQu4vr4xnSDxMaL` (Bella, warm), `AZnzlk1XvdvUeBnXmlld` (Domi, energetic young), `21m00Tcm4TlvDq8ikWAM` (Rachel, professional)
+- `OPENAI_TTS_VOICE` - female options: `shimmer` (soft/warm, default), `nova` (bright, young), `coral` (light, friendly), `sage` (mature/calm). Male: `alloy`, `ash`, `echo`, `onyx`, `fable`.
 - `AMBIENCE_GAIN` - 0.08 (subtle) to 0.20 (clearly audible). Default 0.12.
 
-In `agent.py` `elevenlabs.TTS(...voice_settings=...)`:
-
-- `stability=0.35-0.55` - lower = more emotion/variation
-- `style=0.50-0.70` - higher = more expressive
-- `similarity_boost=0.75` - keep high for consistency
+If you want richer breathing/emotion, swap in ElevenLabs later:
+```python
+# requirements.txt: add livekit-agents[elevenlabs]
+# agent.py:
+from livekit.plugins import elevenlabs
+tts=elevenlabs.TTS(voice_id="EXAVITQu4vr4xnSDxMaL", model="eleven_turbo_v2_5",
+    voice_settings=elevenlabs.VoiceSettings(stability=0.45, similarity_boost=0.75, style=0.55, use_speaker_boost=True))
+```
 
 ## Compliance (important)
 
@@ -139,5 +142,5 @@ In `agent.py` `elevenlabs.TTS(...voice_settings=...)`:
 ## If this fails, check:
 
 1. **`SIP 403/404` on outbound dial** - your Twilio trunk auth / outbound IP whitelist. Run `python fix_twilio_trunk.py`.
-2. **ElevenLabs 401** - wrong API key or voice_id not accessible on your tier.
+2. **Emma silent after pickup** - check worker logs for OpenAI TTS errors; verify `OPENAI_TTS_VOICE` is a valid voice name.
 3. **Transfer fails silently** - `TRANSFER_TO_NUMBER` not in E.164 (+1... format) or Twilio trunk doesn't allow outbound to that number.

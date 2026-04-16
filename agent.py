@@ -4,7 +4,7 @@ Emma - Outbound Health Insurance Lead Qualifier
 Female AI agent that calls prospects from an Excel list, qualifies them for
 health/dental insurance quotes, collects ZIP + DOB, and warm-transfers to Chris.
 
-Pipeline: Deepgram STT -> GPT-4o LLM -> ElevenLabs TTS + call-center ambience.
+Pipeline: Deepgram STT -> GPT-4o LLM -> OpenAI TTS (gpt-4o-mini-tts) + call-center ambience.
 
 Call flow:
   1. Ring -> on answer: "Hey {first_name}, how's it going today?"
@@ -37,7 +37,7 @@ from livekit.agents import (
     function_tool,
     get_job_context,
 )
-from livekit.plugins import deepgram, elevenlabs, noise_cancellation, openai, silero
+from livekit.plugins import deepgram, noise_cancellation, openai, silero
 from livekit.plugins.turn_detector.english import EnglishModel
 
 from transcript_logger import TranscriptLogger
@@ -56,8 +56,8 @@ logger.setLevel(logging.INFO)
 
 OUTBOUND_TRUNK_ID = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # "Bella" - warm female
-AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.mp3")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "shimmer")  # shimmer / nova / alloy / sage / coral
+AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.wav")
 LEARNINGS_FILE = Path("learnings.md")
 
 REJECTION_PHRASES = (
@@ -363,16 +363,7 @@ async def entrypoint(ctx: JobContext) -> None:
         vad=silero.VAD.load(min_silence_duration=0.25, activation_threshold=0.45),
         stt=deepgram.STT(model="nova-3", language="en-US", filler_words=True, punctuate=True),
         llm=openai.LLM(model="gpt-4o", temperature=0.7),
-        tts=elevenlabs.TTS(
-            voice_id=ELEVENLABS_VOICE_ID,
-            model="eleven_turbo_v2_5",
-            voice_settings=elevenlabs.VoiceSettings(
-                stability=0.45,
-                similarity_boost=0.75,
-                style=0.55,
-                use_speaker_boost=True,
-            ),
-        ),
+        tts=openai.TTS(voice=OPENAI_TTS_VOICE, model="gpt-4o-mini-tts"),
     )
 
     # Hook agent transcript -> log assistant speech too
