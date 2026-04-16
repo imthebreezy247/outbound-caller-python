@@ -1,11 +1,13 @@
 """
-Excel dialer: read contacts from .xlsx, normalize phones, dispatch LiveKit jobs.
+Excel dialer: read contacts from .xlsx, normalize phones, scrub, dispatch LiveKit jobs.
 
 Usage:
-  python dialer.py leads.xlsx                    # dial all rows
+  python dialer.py leads.xlsx                    # dial all rows (with scrubbing)
   python dialer.py leads.xlsx --limit 50         # first 50
   python dialer.py leads.xlsx --concurrent 3     # 3 calls in flight
   python dialer.py leads.xlsx --dry-run          # just print what it would do
+  python dialer.py leads.xlsx --no-scrub         # skip scrubbing pipeline
+  python dialer.py leads.xlsx --scrub-only       # scrub and report, don't dial
 
 Expected columns (case-insensitive, any order):
   first_name (or name, fname)      REQUIRED
@@ -169,6 +171,22 @@ async def run(contacts: list[dict], concurrent: int, pause: float, dry_run: bool
     await lk.aclose()
 
 
+async def scrub_and_run(contacts: list[dict], concurrent: int, pause: float, dry_run: bool, no_scrub: bool, scrub_only: bool) -> None:
+    if not no_scrub:
+        from scrubber import scrub_contacts_full
+        print(f"scrubbing {len(contacts)} contacts...")
+        contacts, stats = await scrub_contacts_full(contacts, skip_previously_dialed=True)
+        print(stats.summary())
+        if scrub_only:
+            print("\n--scrub-only mode: not dialing.")
+            for c in contacts[:20]:
+                print(f"  [OK] {c['phone_number']}  {c['first_name']}  zip={c.get('zip')}")
+            if len(contacts) > 20:
+                print(f"  ... and {len(contacts) - 20} more")
+            return
+    await run(contacts, concurrent, pause, dry_run)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("file", type=Path, help=".xlsx or .csv contact list")
@@ -176,6 +194,8 @@ def main() -> None:
     ap.add_argument("--concurrent", type=int, default=2, help="concurrent calls (start low)")
     ap.add_argument("--pause", type=float, default=1.0, help="seconds between dispatches per worker")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-scrub", action="store_true", help="skip the scrubbing pipeline")
+    ap.add_argument("--scrub-only", action="store_true", help="scrub and report, don't dial")
     args = ap.parse_args()
 
     contacts = load_contacts(args.file)
@@ -183,7 +203,7 @@ def main() -> None:
         contacts = contacts[: args.limit]
     print(f"loaded {len(contacts)} valid contacts from {args.file}")
 
-    asyncio.run(run(contacts, args.concurrent, args.pause, args.dry_run))
+    asyncio.run(scrub_and_run(contacts, args.concurrent, args.pause, args.dry_run, args.no_scrub, args.scrub_only))
 
 
 if __name__ == "__main__":

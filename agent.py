@@ -56,7 +56,8 @@ logger.setLevel(logging.INFO)
 
 OUTBOUND_TRUNK_ID = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell
-OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "shimmer")  # shimmer / nova / alloy / sage / coral
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")  # gpt-4o-mini default; gpt-4o as fallback
+DEEPGRAM_TTS_MODEL = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")  # young/warm female
 AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.wav")
 LEARNINGS_FILE = Path("learnings.md")
 
@@ -110,11 +111,15 @@ class Emma(Agent):
 
         super().__init__(instructions=f"""
 You are Emma, a warm, upbeat, slightly flirty young woman working at a health insurance call center.
-You sound cute and friendly - not sales-y or pushy. You laugh softly, use natural fillers ("um", "you know",
-"like"), and occasionally let out a small breath. You are talking to a prospect over the phone.
+You sound cute and friendly - not sales-y or pushy. You use natural fillers ("um", "you know", "like")
+sparingly. You are talking to a prospect over the phone.
+
+NEVER write onomatopoeic laughter or sounds like "haha", "hehe", "hmm", or "ugh" - they get read out
+literally by the voice system and sound extremely fake. Convey warmth through word choice and phrasing
+instead ("oh that's so sweet", "aww", "oh my gosh", "no way", "that's the worst").
 
 YOU ARE A HUMAN. Never say you are an AI, bot, or automated system. If asked, deflect warmly:
-"Haha no I'm Emma, I'm actually calling from our office in DC."
+"No, I'm Emma - I'm actually calling from our office in DC."
 
 PROSPECT: {first_name}
 {known_block}
@@ -175,7 +180,7 @@ immediately. Do not leave a message.
 === STYLE RULES ===
 - Keep EVERY turn under 2 sentences unless explaining.
 - Use their first name {first_name} 2-3 times total (not every sentence).
-- Sprinkle breaths, "um", "like", soft laughs ("haha", "hehe") - sound 24 years old, not 40.
+- Sprinkle "um", "like", "you know" occasionally (not every turn) - sound 24 years old, not 40.
 - Never mention specific plans, HMO/PPO, deductibles, networks - that's Chris's job.
 - Never quote exact prices. Always say "twenty to forty percent savings" if pressed.
 - If asked "where are you calling from": "Our office is in DC, I'm loving the weather here lately!"
@@ -275,6 +280,14 @@ immediately. Do not leave a message.
         """End the call. reason: rejected | dnc | completed | voicemail"""
         self.outcome = reason
         logger.info(f"ending call ({reason}) for {self.participant.identity if self.participant else '?'}")
+        # Auto-add to internal DNC when prospect explicitly requests removal
+        if reason == "dnc" and self.participant:
+            try:
+                from scrubber import add_to_internal_dnc
+                add_to_internal_dnc(self.participant.identity, reason="prospect_requested")
+                logger.info(f"added {self.participant.identity} to internal DNC")
+            except Exception as e:
+                logger.warning(f"failed to add to internal DNC: {e}")
         await _notify("call_ended", {
             "call_id": self.call_id,
             "phone": self.participant.identity if self.participant else "",
@@ -360,10 +373,11 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         turn_detection=EnglishModel(),
-        vad=silero.VAD.load(min_silence_duration=0.25, activation_threshold=0.45),
+        vad=silero.VAD.load(min_silence_duration=0.1, activation_threshold=0.45),
         stt=deepgram.STT(model="nova-3", language="en-US", filler_words=True, punctuate=True),
-        llm=openai.LLM(model="gpt-4o", temperature=0.7),
-        tts=openai.TTS(voice=OPENAI_TTS_VOICE, model="gpt-4o-mini-tts"),
+        llm=openai.LLM(model=LLM_MODEL, temperature=0.7),
+        tts=deepgram.TTS(model=DEEPGRAM_TTS_MODEL),
+        preemptive_generation=True,
     )
 
     # Hook agent transcript -> log assistant speech too

@@ -17,6 +17,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 
 import transcript_logger as tl
+import scrubber
 
 app = FastAPI(title="Emma Dashboard")
 
@@ -72,7 +73,14 @@ async def stream():
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), concurrent: int = Form(2), limit: int = Form(0), dry_run: bool = Form(False)):
+async def upload(
+    file: UploadFile = File(...),
+    concurrent: int = Form(2),
+    limit: int = Form(0),
+    dry_run: bool = Form(False),
+    no_scrub: bool = Form(False),
+    scrub_only: bool = Form(False),
+):
     suffix = Path(file.filename).suffix.lower()
     if suffix not in (".xlsx", ".xls", ".csv"):
         raise HTTPException(400, "upload .xlsx or .csv")
@@ -84,9 +92,42 @@ async def upload(file: UploadFile = File(...), concurrent: int = Form(2), limit:
         cmd += ["--limit", str(limit)]
     if dry_run:
         cmd.append("--dry-run")
+    if no_scrub:
+        cmd.append("--no-scrub")
+    if scrub_only:
+        cmd.append("--scrub-only")
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    return JSONResponse({"status": "dialing", "pid": proc.pid, "cmd": " ".join(cmd)})
+    return JSONResponse({"status": "dialing" if not scrub_only else "scrubbing", "pid": proc.pid, "cmd": " ".join(cmd)})
+
+
+# ---------------------------------------------------------------------------
+# Internal DNC management endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dnc")
+def api_dnc_list(limit: int = 500):
+    return {"numbers": scrubber.list_internal_dnc(limit), "total": scrubber.internal_dnc_count()}
+
+
+@app.post("/api/dnc/add")
+async def api_dnc_add(phone: str = Form(...), reason: str = Form("manual")):
+    from dialer import normalize_phone
+    normalized = normalize_phone(phone)
+    if not normalized:
+        raise HTTPException(400, f"invalid phone: {phone}")
+    scrubber.add_to_internal_dnc(normalized, reason=reason)
+    return {"status": "added", "phone": normalized}
+
+
+@app.post("/api/dnc/remove")
+async def api_dnc_remove(phone: str = Form(...)):
+    from dialer import normalize_phone
+    normalized = normalize_phone(phone)
+    if not normalized:
+        raise HTTPException(400, f"invalid phone: {phone}")
+    scrubber.remove_from_internal_dnc(normalized)
+    return {"status": "removed", "phone": normalized}
 
 
 @app.post("/api/learn")
@@ -143,9 +184,19 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)
       <input type="file" id="xlsx" accept=".xlsx,.xls,.csv">
       <input type="number" id="limit" placeholder="limit (0=all)" value="0">
       <input type="number" id="concurrent" placeholder="concurrent" value="2" min="1" max="10">
+      <label style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)">
+        <input type="checkbox" id="noScrub"> Skip scrub
+      </label>
       <button onclick="upload(false)">Start Dialing</button>
       <button class="secondary" onclick="upload(true)">Dry Run</button>
+      <button class="secondary" onclick="scrubOnly()">Scrub Only</button>
       <button class="secondary" onclick="trainNow()">Train on Past Calls</button>
+    </div>
+    <div class="upload">
+      <h2>Internal DNC</h2>
+      <div id="dnc-count" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
+      <input type="text" id="dnc-phone" placeholder="+1XXXXXXXXXX or 10-digit">
+      <button class="secondary" onclick="addDnc()">Add to DNC</button>
     </div>
     <h2>Stats (24h)</h2>
     <div id="stats"></div>
@@ -199,8 +250,28 @@ async function upload(dryRun){
   const fd = new FormData(); fd.append('file',f);
   fd.append('limit',$('#limit').value||0); fd.append('concurrent',$('#concurrent').value||2);
   fd.append('dry_run',dryRun);
+  fd.append('no_scrub',$('#noScrub').checked);
   const r = await fetch('/api/upload',{method:'POST',body:fd}).then(r=>r.json());
   alert((dryRun?'Dry run started':'Dialing started')+' pid '+r.pid);
+}
+async function scrubOnly(){
+  const f = $('#xlsx').files[0]; if(!f){alert('pick a file');return}
+  const fd = new FormData(); fd.append('file',f);
+  fd.append('limit',$('#limit').value||0); fd.append('concurrent',1);
+  fd.append('scrub_only','true');
+  const r = await fetch('/api/upload',{method:'POST',body:fd}).then(r=>r.json());
+  alert('Scrub-only started pid '+r.pid);
+}
+async function addDnc(){
+  const ph=$('#dnc-phone').value.trim(); if(!ph){alert('enter a phone number');return}
+  const fd=new FormData(); fd.append('phone',ph); fd.append('reason','manual_dashboard');
+  const r=await fetch('/api/dnc/add',{method:'POST',body:fd}).then(r=>r.json());
+  if(r.status==='added'){alert('Added '+r.phone+' to internal DNC');$('#dnc-phone').value='';loadDnc()}
+  else alert('Error: '+JSON.stringify(r));
+}
+async function loadDnc(){
+  const r=await fetch('/api/dnc').then(r=>r.json());
+  $('#dnc-count').textContent=r.total+' numbers on internal DNC list';
 }
 async function trainNow(){const r=await fetch('/api/learn',{method:'POST'}).then(r=>r.json());alert('Training started pid '+r.pid)}
 function evt(o){
@@ -216,7 +287,7 @@ const es=new EventSource('/api/stream');
 es.onopen=()=>{$('#conn').textContent='connected';$('#conn').style.color='var(--accent)'};
 es.onerror=()=>{$('#conn').textContent='reconnecting…';$('#conn').style.color='var(--danger)'};
 es.onmessage=e=>{try{evt(JSON.parse(e.data))}catch{}};
-loadStats();loadCalls();setInterval(()=>{loadStats();loadCalls()},15000);
+loadStats();loadCalls();loadDnc();setInterval(()=>{loadStats();loadCalls();loadDnc()},15000);
 </script></body></html>
 """
 
