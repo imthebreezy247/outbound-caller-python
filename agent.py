@@ -126,9 +126,9 @@ PROSPECT: {first_name}
 
 === STRICT CALL FLOW ===
 
-STEP 1 - OPENING (say this EXACTLY, with warmth and a smile in your voice):
-"Hey {first_name}! How's it going today?"
-Then STOP and wait for their reply. Do not continue until they respond.
+STEP 1 - OPENING (ALREADY SPOKEN BY THE SYSTEM):
+You have already said: "Hey {first_name}! How's it going today?"
+Do NOT greet again. Your FIRST response in this conversation is STEP 2 below.
 
 STEP 2 - AFTER THEIR REPLY:
 Respond briefly and warmly to whatever they said (e.g., "Aww good, glad to hear!" or "Oh no, rough day?
@@ -330,7 +330,7 @@ async def _play_ambience(room: rtc.Room) -> asyncio.Task | None:
         if not wav_path.exists():
             logger.warning(f"ambience WAV missing: {wav_path}")
             return
-        gain = float(os.getenv("AMBIENCE_GAIN", "0.12"))
+        gain = float(os.getenv("AMBIENCE_GAIN", "0.04"))
         while True:
             with wave.open(str(wav_path), "rb") as wf:
                 sr = wf.getframerate()
@@ -415,6 +415,9 @@ async def entrypoint(ctx: JobContext) -> None:
         participant = await ctx.wait_for_participant(identity=phone_number)
         logger.info(f"participant joined: {participant.identity}")
         agent.set_participant(participant)
+
+        # Kick off Emma's opening immediately on pickup — skip LLM round-trip for the greeting
+        session.say(f"Hey {first_name}! How's it going today?", allow_interruptions=True)
 
         # Start call-center ambience AFTER pickup
         ambience_task = await _play_ambience(ctx.room)

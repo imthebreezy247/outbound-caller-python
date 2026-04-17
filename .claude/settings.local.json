@@ -63,12 +63,19 @@
       "Bash(wait)",
       "Bash(git submodule:*)",
       "Read(//c/My-Projects/email-campaign-revised/**)",
-      "Read(//c/Users/cjsin/.claude/plans/**)"
+      "Read(//c/Users/cjsin/.claude/plans/**)",
+      "Bash(powershell.exe -NoProfile -Command 'echo $PROFILE.CurrentUserAllHosts; echo $PROFILE.CurrentUserCurrentHost; echo $PROFILE.AllUsersAllHosts')",
+      "Bash(grep -l -iE \"venv|activate\" \"C:/Users/cjsin/OneDrive/Documents/WindowsPowerShell/\"*.ps1)",
+      "Bash(bash -c 'source ~/.bashrc && cd \"d:/Coding-projects/outbound-caller-python-main\" && echo \"VIRTUAL_ENV=$VIRTUAL_ENV\"')",
+      "Bash(bash -c 'source ~/.bashrc && cd \"d:/Coding-projects/outbound-caller-python-main\" && echo \"VIRTUAL_ENV=$VIRTUAL_ENV\" && which python')",
+      "Bash(bash -c 'source ~/.bashrc && cd \"/d/Coding-projects/outbound-caller-python-main\" && echo \"VIRTUAL_ENV=$VIRTUAL_ENV\" && which python')",
+      "Bash(d:/Coding-projects/outbound-caller-python-main/.venv/bin/python -c \"import livekit.agents; print\\(livekit.agents.__version__\\)\")"
     ],
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "C:\\Users\\cjsin\\.claude\\plans"
+      "C:\\Users\\cjsin\\.claude\\plans",
+      "C:\\Users\\cjsin"
     ]
   }
 }
