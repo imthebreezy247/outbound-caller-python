@@ -72,7 +72,9 @@
       "Bash(d:/Coding-projects/outbound-caller-python-main/.venv/bin/python -c \"import livekit.agents; print\\(livekit.agents.__version__\\)\")",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && ls -la venv-wsl/bin/ | head -20\")",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && cat .env.local 2>&1 | head -20\")",
-      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 -c 'import livekit; import livekit.agents; import livekit.plugins.deepgram; import livekit.plugins.openai; import livekit.plugins.silero; from livekit.plugins.turn_detector.english import EnglishModel; print\\(\\\\\"imports OK\\\\\"\\)'\")"
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 -c 'import livekit; import livekit.agents; import livekit.plugins.deepgram; import livekit.plugins.openai; import livekit.plugins.silero; from livekit.plugins.turn_detector.english import EnglishModel; print\\(\\\\\"imports OK\\\\\"\\)'\")",
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && nohup python3 agent.py start > /tmp/emma-agent.log 2>&1 & echo \\\\$! > /tmp/emma-agent.pid && sleep 1 && cat /tmp/emma-agent.pid\")",
+      "Bash(wsl -e bash -c \"until grep -q 'registered worker\\\\|error\\\\|Error\\\\|Traceback' /tmp/emma-agent.log 2>/dev/null; do sleep 2; done; echo '--- log tail ---'; tail -60 /tmp/emma-agent.log\")"
     ],
     "deny": [],
     "ask": [],
