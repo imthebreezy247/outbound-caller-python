@@ -71,7 +71,8 @@
       "Bash(bash -c 'source ~/.bashrc && cd \"/d/Coding-projects/outbound-caller-python-main\" && echo \"VIRTUAL_ENV=$VIRTUAL_ENV\" && which python')",
       "Bash(d:/Coding-projects/outbound-caller-python-main/.venv/bin/python -c \"import livekit.agents; print\\(livekit.agents.__version__\\)\")",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && ls -la venv-wsl/bin/ | head -20\")",
-      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && cat .env.local 2>&1 | head -20\")"
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && cat .env.local 2>&1 | head -20\")",
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 -c 'import livekit; import livekit.agents; import livekit.plugins.deepgram; import livekit.plugins.openai; import livekit.plugins.silero; from livekit.plugins.turn_detector.english import EnglishModel; print\\(\\\\\"imports OK\\\\\"\\)'\")"
     ],
     "deny": [],
     "ask": [],
