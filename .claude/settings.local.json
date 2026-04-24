@@ -77,7 +77,8 @@
       "Bash(wsl -e bash -c \"until grep -q 'registered worker\\\\|error\\\\|Error\\\\|Traceback' /tmp/emma-agent.log 2>/dev/null; do sleep 2; done; echo '--- log tail ---'; tail -60 /tmp/emma-agent.log\")",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 agent.py start 2>&1\")",
       "Read(//mnt/c/Users/cjsin/AppData/Local/Temp/claude/d--Coding-projects-outbound-caller-python-main/697ffc42-159d-486c-96e6-caaf6583af4e/tasks/**)",
-      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 test_call.py --to 9415180701 --name Chris 2>&1\")"
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 test_call.py --to 9415180701 --name Chris 2>&1\")",
+      "Bash(grep -iE \"sk-[a-zA-Z0-9_-]{20,}|APIC[a-zA-Z0-9]{8,}|AC[a-f0-9]{30,}\")"
     ],
     "deny": [],
     "ask": [],
