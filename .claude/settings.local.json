@@ -70,7 +70,8 @@
       "Bash(bash -c 'source ~/.bashrc && cd \"d:/Coding-projects/outbound-caller-python-main\" && echo \"VIRTUAL_ENV=$VIRTUAL_ENV\" && which python')",
       "Bash(bash -c 'source ~/.bashrc && cd \"/d/Coding-projects/outbound-caller-python-main\" && echo \"VIRTUAL_ENV=$VIRTUAL_ENV\" && which python')",
       "Bash(d:/Coding-projects/outbound-caller-python-main/.venv/bin/python -c \"import livekit.agents; print\\(livekit.agents.__version__\\)\")",
-      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && ls -la venv-wsl/bin/ | head -20\")"
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && ls -la venv-wsl/bin/ | head -20\")",
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && cat .env.local 2>&1 | head -20\")"
     ],
     "deny": [],
     "ask": [],
