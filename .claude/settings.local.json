@@ -78,7 +78,9 @@
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 agent.py start 2>&1\")",
       "Read(//mnt/c/Users/cjsin/AppData/Local/Temp/claude/d--Coding-projects-outbound-caller-python-main/697ffc42-159d-486c-96e6-caaf6583af4e/tasks/**)",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python3 test_call.py --to 9415180701 --name Chris 2>&1\")",
-      "Bash(grep -iE \"sk-[a-zA-Z0-9_-]{20,}|APIC[a-zA-Z0-9]{8,}|AC[a-f0-9]{30,}\")"
+      "Bash(grep -iE \"sk-[a-zA-Z0-9_-]{20,}|APIC[a-zA-Z0-9]{8,}|AC[a-f0-9]{30,}\")",
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && pip list 2>/dev/null | grep -iE 'cartesia|elevenlabs'\")",
+      "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && pip list 2>/dev/null | grep -iE 'fastapi|uvicorn'\")"
     ],
     "deny": [],
     "ask": [],

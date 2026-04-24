@@ -37,7 +37,7 @@ from livekit.agents import (
     function_tool,
     get_job_context,
 )
-from livekit.plugins import deepgram, noise_cancellation, openai, silero
+from livekit.plugins import deepgram, elevenlabs, noise_cancellation, openai, silero
 from livekit.plugins.turn_detector.english import EnglishModel
 
 from transcript_logger import TranscriptLogger
@@ -376,7 +376,10 @@ async def entrypoint(ctx: JobContext) -> None:
         vad=silero.VAD.load(min_silence_duration=0.1, activation_threshold=0.45),
         stt=deepgram.STT(model="nova-3", language="en-US", filler_words=True, punctuate=True),
         llm=openai.LLM(model=LLM_MODEL, temperature=0.7),
-        tts=deepgram.TTS(model=DEEPGRAM_TTS_MODEL),
+        tts=elevenlabs.TTS(
+            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),  # default: Jessica
+            model="eleven_flash_v2_5",
+        ),
         preemptive_generation=True,
     )
 

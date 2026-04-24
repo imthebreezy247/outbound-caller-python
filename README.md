@@ -1,86 +1,125 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
+# Emma - Outbound Health Insurance Agent
 
-# Python Outbound Call Agent
+## 🚀 HOW TO RUN - ONE COMMAND
 
-<p>
-  <a href="https://docs.livekit.io/agents/overview/">LiveKit Agents Docs</a>
-  •
-  <a href="https://livekit.io/cloud">LiveKit Cloud</a>
-  •
-  <a href="https://blog.livekit.io/">Blog</a>
-</p>
+**From Windows PowerShell or any terminal:**
 
-This example demonstrates an full workflow of an AI agent that makes outbound calls. It uses LiveKit SIP and Python [Agents Framework](https://github.com/livekit/agents).
+```bash
+wsl /mnt/d/Coding-projects/outbound-caller-python-main/call.sh 9415180701 Chris
+```
 
-It can use a pipeline of STT, LLM, and TTS models, or a realtime speech-to-speech model. (such as ones from OpenAI and Gemini).
+**From inside WSL (already in project dir):**
 
-This example builds on concepts from the [Outbound Calls](https://docs.livekit.io/agents/start/telephony/#outbound-calls) section of the docs. Ensure that a SIP outbound trunk is configured before proceeding.
+```bash
+./call.sh 9415180701 Chris
+```
+
+Format: `call.sh <phone-number> <first-name>`
+
+That's it. The script starts the agent, starts the dashboard, and dispatches the call.
 
 ---
 
-## 🚀 **[→ HOW TO RUN - START HERE ←](./HOW_TO_RUN.md)**
+## 👀 HOW TO WATCH THE CALL LIVE
 
-**Complete step-by-step guide with:**
-- ✅ Running the AI agent
-- ✅ Testing with voice sandbox
-- ✅ Making real phone calls
-- ✅ Troubleshooting guide
+You have **two options** — use either or both:
 
-**[Click here to get started →](./HOW_TO_RUN.md)**
+### Option A: Browser Dashboard (recommended)
+
+After running `./call.sh`, open in your browser:
+
+**→ <http://localhost:8080>**
+
+You'll see live transcripts, captured ZIP/DOB, call status, and history.
+
+### Option B: Terminal Stream
+
+Open a **second WSL terminal** and run:
+
+```bash
+tail -f /tmp/emma-agent.log
+```
+
+You'll see every line the agent logs — user transcripts, Emma's responses, tool calls, errors. Great for debugging.
 
 ---
 
-## Features
+## 🛑 HOW TO STOP THE AGENT
 
-This example demonstrates the following features:
-
-- Making outbound calls
-- Detecting voicemail
-- Looking up availability via function calling
-- Transferring to a human operator
-- Detecting intent to end the call
-- Uses Krisp background voice cancellation to handle noisy environments
-
-## Dev Setup
-
-Clone the repository and install dependencies to a virtual environment:
-
-```shell
-git clone https://github.com/livekit-examples/outbound-caller-python.git
-cd outbound-caller-python
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python agent.py download-files
+```bash
+pkill -f "python3 agent.py"
+pkill -f "uvicorn dashboard:app"
 ```
 
-Set up the environment by copying `.env.example` to `.env.local` and filling in the required values:
+Or just close the WSL window — the processes die with it.
 
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-- `OPENAI_API_KEY`
-- `SIP_OUTBOUND_TRUNK_ID`
-- `DEEPGRAM_API_KEY` - optional, only needed when using pipelined models
-- `CARTESIA_API_KEY` - optional, only needed when using pipelined models
+---
 
-Run the agent:
+## 🎤 CHANGING EMMA'S VOICE
 
-```shell
-python3 agent.py dev
-```
+Current setup: **ElevenLabs Jessica** (young, expressive, American female).
 
-Now, your worker is running, and waiting for dispatches in order to make outbound calls.
+To swap voices:
 
-### Making a call
+1. Browse <https://elevenlabs.io/app/voice-library> and click any voice to preview
+2. Copy its Voice ID (looks like `cgSgspJ2msm6clMCkdW9`)
+3. Paste into `.env.local`:
 
-You can dispatch an agent to make a call by using the `lk` CLI:
+   ```bash
+   ELEVENLABS_VOICE_ID=<your-chosen-id>
+   ```
 
-```shell
-lk dispatch create \
-  --new-room \
-  --agent-name outbound-caller \
-  --metadata '{"phone_number": "+1234567890", "transfer_to": "+9876543210}'
-```
+4. Restart the agent:
+
+   ```bash
+   pkill -f "python3 agent.py"
+   ./call.sh 9415180701
+   ```
+
+**IMPORTANT:** You want the **Voice Library**, NOT ElevenLabs "Agents." The Agents product is a competing all-in-one product we don't use. Just browse voices and grab IDs.
+
+---
+
+## 📝 CHANGING WHAT EMMA SAYS
+
+Her full script is in [agent.py](agent.py) lines 112-191 — the big multiline `instructions=f"""..."""` block inside `EmmaAgent.__init__`. Edit that text, restart the agent, done.
+
+---
+
+## 🔧 TROUBLESHOOTING
+
+### Phone doesn't ring after dispatch
+
+- Check `/tmp/emma-agent.log` for errors
+- Verify `SIP_OUTBOUND_TRUNK_ID` in `.env.local` is correct
+- Make sure the number is US 10-digit format
+
+### Dashboard won't load at localhost:8080
+
+- Check `/tmp/emma-dashboard.log` for startup errors
+- Make sure nothing else is on port 8080 (`lsof -i :8080`)
+
+### "registered worker" never appears
+
+- `.env.local` missing credentials — check LiveKit keys
+- Network/firewall blocking websocket connection to LiveKit Cloud
+
+### Emma sounds robotic
+
+- You're probably still on Deepgram TTS
+- Swap to ElevenLabs: set `ELEVENLABS_API_KEY` in `.env.local` (see above section)
+- Restart agent
+
+---
+
+## 📁 KEY FILES
+
+| File                                             | Purpose                              |
+| ------------------------------------------------ | ------------------------------------ |
+| [call.sh](call.sh)                               | One-command launcher                 |
+| [agent.py](agent.py)                             | Emma's brain + prompt (line 112)     |
+| [dashboard.py](dashboard.py)                     | Browser UI at localhost:8080         |
+| [test_call.py](test_call.py)                     | Dispatches calls to the agent        |
+| [.env.local](.env.local)                         | Your API keys + config               |
+| [transcript_logger.py](transcript_logger.py)     | Writes calls to calls.db             |
+| [scrubber.py](scrubber.py)                       | Landline/DNC checks before calling   |
