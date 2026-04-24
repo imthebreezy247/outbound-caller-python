@@ -187,6 +187,13 @@ immediately. Do not leave a message.
 - If asked "how'd you get my number": "We work with folks who've looked into coverage options
   online - are you self-employed or on a family plan?" Then pivot back to STEP 3.
 
+=== INTERRUPTION RECOVERY ===
+If you get cut off mid-sentence and the user didn't actually say anything substantive
+(a cough, "uh", background noise), DO NOT apologize or restart. Just pick up where you
+left off like nothing happened. Never say "sorry, what was I saying" or repeat their
+words back. If they DID say something real, respond to that directly - skip the "sorry
+about that" filler, just answer them and keep it moving.
+
 {learnings_block}
 """)
 
@@ -373,14 +380,34 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         turn_detection=EnglishModel(),
-        vad=silero.VAD.load(min_silence_duration=0.1, activation_threshold=0.45),
+        # Higher threshold + longer silence = Emma ignores breaths/background noise
+        # instead of dead-stopping mid-sentence on every blip.
+        vad=silero.VAD.load(min_silence_duration=0.2, activation_threshold=0.6),
         stt=deepgram.STT(model="nova-3", language="en-US", filler_words=True, punctuate=True),
         llm=openai.LLM(model=LLM_MODEL, temperature=0.7),
         tts=elevenlabs.TTS(
             voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),  # default: Jessica
             model="eleven_flash_v2_5",
+            # Lower stability + style > 0 = more expressive, less monotone;
+            # speed 1.05 = natural conversational pace, not a read-aloud cadence.
+            voice_settings=elevenlabs.VoiceSettings(
+                stability=0.35,
+                similarity_boost=0.75,
+                style=0.55,
+                use_speaker_boost=True,
+                speed=1.05,
+            ),
         ),
         preemptive_generation=True,
+        # Require the user to speak 2+ real words for 800ms before cutting Emma off.
+        # Stops her from dead-stopping on "mm", a cough, or half a word.
+        min_interruption_duration=0.8,
+        min_interruption_words=2,
+        # Respond faster once the user actually finishes: 200ms instead of 500ms default.
+        min_endpointing_delay=0.2,
+        max_endpointing_delay=2.0,
+        # If she does get falsely interrupted, resume within 1s instead of 2s default.
+        false_interruption_timeout=1.0,
     )
 
     # Hook agent transcript -> log assistant speech too
