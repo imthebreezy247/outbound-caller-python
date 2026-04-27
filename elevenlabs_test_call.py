@@ -63,7 +63,7 @@ def fire(phone: str, first_name: str, zip_code: str | None = None, dob: str | No
     }
     print(f"calling {phone} as {first_name} via ElevenLabs agent {ELEVENLABS_AGENT_ID}...")
     resp = httpx.post(
-        "https://api.elevenlabs.io/v1/convai/twilio/outbound_call",
+        "https://api.elevenlabs.io/v1/convai/twilio/outbound-call",
         json=payload,
         headers={
             "xi-api-key": ELEVENLABS_API_KEY,

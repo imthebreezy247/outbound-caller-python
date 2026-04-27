@@ -61,7 +61,7 @@ async def dispatch_call(client: httpx.AsyncClient, contact: dict) -> dict:
         },
     }
     resp = await client.post(
-        f"{ELEVENLABS_API_BASE}/convai/twilio/outbound_call",
+        f"{ELEVENLABS_API_BASE}/convai/twilio/outbound-call",
         json=payload,
         headers={
             "xi-api-key": ELEVENLABS_API_KEY,
