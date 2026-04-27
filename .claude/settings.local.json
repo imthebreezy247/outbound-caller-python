@@ -81,7 +81,10 @@
       "Bash(grep -iE \"sk-[a-zA-Z0-9_-]{20,}|APIC[a-zA-Z0-9]{8,}|AC[a-f0-9]{30,}\")",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && pip list 2>/dev/null | grep -iE 'cartesia|elevenlabs'\")",
       "Bash(wsl -e bash -c \"cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && pip list 2>/dev/null | grep -iE 'fastapi|uvicorn'\")",
-      "Bash(wait %1)"
+      "Bash(wait %1)",
+      "Read(//tmp/**)",
+      "Bash(wsl -d Ubuntu -- bash -c 'ls -la /tmp/emma-agent.log 2>/dev/null && echo \"---LOG TAIL---\" && tail -100 /tmp/emma-agent.log 2>/dev/null')",
+      "Bash(wsl -d Ubuntu -- bash -c 'cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python -c \" *)"
     ],
     "deny": [],
     "ask": [],

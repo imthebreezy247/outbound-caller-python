@@ -381,12 +381,26 @@ async def entrypoint(ctx: JobContext) -> None:
     session = AgentSession(
         turn_detection=EnglishModel(),
         # Higher threshold + longer silence = Emma ignores breaths/background noise
-        # instead of dead-stopping mid-sentence on every blip.
-        vad=silero.VAD.load(min_silence_duration=0.2, activation_threshold=0.6),
-        stt=deepgram.STT(model="nova-3", language="en-US", filler_words=True, punctuate=True),
+        # AND echo of her own voice bleeding back through the SIP trunk.
+        vad=silero.VAD.load(min_silence_duration=0.2, activation_threshold=0.7),
+        stt=deepgram.STT(
+            model="nova-3",
+            language="en-US",
+            # filler_words off: previously her own "um" was echoing back via the trunk
+            # and getting transcribed as user input. Drop them at the STT layer.
+            filler_words=False,
+            punctuate=True,
+            # Wait 300ms of silence before finalizing a transcript. Short echo blips
+            # of Emma's own voice (~100-200ms) get merged/discarded instead of
+            # surfacing as user turns that the LLM then responds to.
+            endpointing_ms=300,
+        ),
         llm=openai.LLM(model=LLM_MODEL, temperature=0.7),
         tts=elevenlabs.TTS(
             voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),  # default: Jessica
+            # Plugin reads ELEVEN_API_KEY by default; our .env.local uses
+            # ELEVENLABS_API_KEY so we pass it explicitly.
+            api_key=os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY"),
             model="eleven_flash_v2_5",
             # Lower stability + style > 0 = more expressive, less monotone;
             # speed 1.05 = natural conversational pace, not a read-aloud cadence.
