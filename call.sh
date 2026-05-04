@@ -13,7 +13,14 @@ DASH_LOG=/tmp/emma-dashboard.log
 AGENT_PID=/tmp/emma-agent.pid
 DASH_PID=/tmp/emma-dashboard.pid
 
-source venv-wsl/bin/activate
+if [ -f venv-wsl/bin/activate ]; then
+  source venv-wsl/bin/activate
+elif [ -f venv/bin/activate ]; then
+  source venv/bin/activate
+else
+  echo "no venv found (looked for venv-wsl/, venv/)" >&2
+  exit 1
+fi
 
 # ---- Start agent if not already running ----
 if [ -f "$AGENT_PID" ] && kill -0 "$(cat $AGENT_PID)" 2>/dev/null; then
