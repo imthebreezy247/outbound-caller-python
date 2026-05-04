@@ -380,30 +380,23 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         turn_detection=EnglishModel(),
-        # Higher threshold + longer silence = Emma ignores breaths/background noise
-        # AND echo of her own voice bleeding back through the SIP trunk.
-        vad=silero.VAD.load(min_silence_duration=0.2, activation_threshold=0.7),
+        # VAD: balanced threshold — 0.6 catches real speech, ignores background noise
+        # but not so high it misses quiet speakers. 150ms silence = faster turn release.
+        vad=silero.VAD.load(min_silence_duration=0.15, activation_threshold=0.6),
         stt=deepgram.STT(
             model="nova-3",
             language="en-US",
-            # filler_words off: previously her own "um" was echoing back via the trunk
-            # and getting transcribed as user input. Drop them at the STT layer.
             filler_words=False,
             punctuate=True,
-            # Wait 300ms of silence before finalizing a transcript. Short echo blips
-            # of Emma's own voice (~100-200ms) get merged/discarded instead of
-            # surfacing as user turns that the LLM then responds to.
-            endpointing_ms=300,
+            # 200ms endpointing = faster transcript finalization. The turn detector
+            # handles the "is the user done?" logic; STT just needs to ship the text fast.
+            endpointing_ms=200,
         ),
         llm=openai.LLM(model=LLM_MODEL, temperature=0.7),
         tts=elevenlabs.TTS(
-            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),  # default: Jessica
-            # Plugin reads ELEVEN_API_KEY by default; our .env.local uses
-            # ELEVENLABS_API_KEY so we pass it explicitly.
+            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),
             api_key=os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY"),
             model="eleven_flash_v2_5",
-            # Lower stability + style > 0 = more expressive, less monotone;
-            # speed 1.05 = natural conversational pace, not a read-aloud cadence.
             voice_settings=elevenlabs.VoiceSettings(
                 stability=0.35,
                 similarity_boost=0.75,
@@ -413,15 +406,15 @@ async def entrypoint(ctx: JobContext) -> None:
             ),
         ),
         preemptive_generation=True,
-        # Require the user to speak 2+ real words for 800ms before cutting Emma off.
-        # Stops her from dead-stopping on "mm", a cough, or half a word.
-        min_interruption_duration=0.8,
-        min_interruption_words=2,
-        # Respond faster once the user actually finishes: 200ms instead of 500ms default.
-        min_endpointing_delay=0.2,
-        max_endpointing_delay=2.0,
-        # If she does get falsely interrupted, resume within 1s instead of 2s default.
-        false_interruption_timeout=1.0,
+        # Interruption: 1 word for 500ms is enough to cut Emma off
+        min_interruption_duration=0.5,
+        min_interruption_words=1,
+        # Respond FAST: 150ms min delay after user finishes. This is the big latency knob.
+        min_endpointing_delay=0.15,
+        # Max 1s wait if turn detector is unsure user is done (was 2s — too slow)
+        max_endpointing_delay=1.0,
+        # Resume quickly after false interruption
+        false_interruption_timeout=0.8,
     )
 
     # Hook agent transcript -> log assistant speech too
@@ -433,6 +426,20 @@ async def entrypoint(ctx: JobContext) -> None:
                 agent.logger.log_turn("assistant", item.text_content or "")
         except Exception:
             pass
+
+    # Event that fires when the SIP participant hangs up or drops
+    call_done = asyncio.Event()
+    ambience_task: asyncio.Task | None = None
+
+    @ctx.room.on("participant_disconnected")
+    def _on_participant_left(participant: rtc.RemoteParticipant):
+        logger.info(f"participant disconnected: {participant.identity}")
+        call_done.set()
+
+    @ctx.room.on("disconnected")
+    def _on_room_disconnected():
+        logger.info("room disconnected")
+        call_done.set()
 
     session_started = asyncio.create_task(
         session.start(
@@ -460,7 +467,11 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info(f"participant joined: {participant.identity}")
         agent.set_participant(participant)
 
-        # Kick off Emma's opening immediately on pickup — skip LLM round-trip for the greeting
+        # Wait 2.5s after pickup before speaking — gives the prospect time to finish
+        # saying "hello?" and hear a natural pause (like a real person calling)
+        await asyncio.sleep(2.5)
+
+        # Kick off Emma's opening — skip LLM round-trip for the greeting
         session.say(f"Hey {first_name}! How's it going today?", allow_interruptions=True)
 
         # Start call-center ambience AFTER pickup
@@ -476,10 +487,24 @@ async def entrypoint(ctx: JobContext) -> None:
 
         ctx.add_shutdown_callback(_finalize)
 
+        # ---- KEEP ENTRYPOINT ALIVE ----
+        # Without this, entrypoint() returns immediately and the LiveKit worker
+        # considers the job finished -> tears down the room after a few turns.
+        # We block here until the prospect hangs up, the room disconnects,
+        # or the agent triggers a hangup via delete_room.
+        logger.info("entrypoint holding — waiting for call to end")
+        await call_done.wait()
+        logger.info(f"call ended — outcome={agent.outcome}")
+
     except api.TwirpError as e:
         logger.error(f"SIP error: {e.message} / {e.metadata.get('sip_status_code')} {e.metadata.get('sip_status')}")
         await _notify("call_error", {"call_id": call_id, "phone": phone_number, "error": e.message, "sip_status": e.metadata.get("sip_status_code")})
         agent.logger.finalize(outcome=f"sip_error:{e.metadata.get('sip_status_code')}", zip_code=None, dob=None)
+        ctx.shutdown()
+    except Exception as e:
+        logger.exception(f"unexpected error in entrypoint: {e}")
+        agent.logger.finalize(outcome=f"error:{type(e).__name__}", zip_code=agent.collected_zip, dob=agent.collected_dob)
+        call_done.set()
         ctx.shutdown()
 
 
