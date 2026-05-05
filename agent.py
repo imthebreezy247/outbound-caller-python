@@ -67,10 +67,11 @@ DEEPGRAM_TTS_MODEL = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")  # youn
 AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.wav")
 LEARNINGS_FILE = Path("learnings.md")
 
-REJECTION_PHRASES = (
-    "not interested", "no thank", "no thanks",
-    "stop calling", "don't call", "do not call",
-    "remove me", "take me off", "fuck off", "leave me alone",
+DNC_PHRASES = (
+    "do not call", "don't call", "dont call", "stop calling",
+    "remove me", "take me off", "lose this number", "lose my number",
+    "never call me again", "don't ever call", "leave me alone",
+    "fuck off", "do not call list", "dnc",
 )
 
 
@@ -99,7 +100,6 @@ class Emma(Agent):
         self.participant: rtc.RemoteParticipant | None = None
         self.collected_zip: str | None = known_zip
         self.collected_dob: str | None = known_dob
-        self.rejection_count = 0
         self.transfer_initiated = False
         self.outcome = "unknown"
         self.call_id = dial_info.get("call_id", f"call_{int(time.time())}")
@@ -152,17 +152,30 @@ day? I totally get it."). Then pivot naturally:
 or just super unhappy with their health insurance - is that kinda the case with you?"
 Then STOP and wait.
 
-STEP 3 - QUALIFY:
+STEP 3 - QUALIFY (RULE OF THREE - read this carefully):
 - If they say YES / maybe / "yeah it's expensive" / any interest signal -> go to STEP 4.
-- If they say "no" / they're happy / have great coverage / "I'm good" -> this is NOT a rejection,
-  it's just an answer to the qualifying question. Do the soft follow-up EVERY TIME:
-  "Totally fair! But like real quick - when's the last time you actually compared rates? We're
-  usually saving people like twenty to forty percent for the same or better coverage, it's crazy."
-  Only after THIS soft follow-up, if they still firmly decline (e.g. "no I'm really not interested",
-  "stop calling", or hostile tone), then close politely per REJECTION RULES.
+- If they say "no" / "I'm good" / "I'm fine" / "I'm happy with mine" -> this is NOT a hangup signal.
+  Run the rule of three. You get THREE total "no I don't want a quote" answers before you hang up.
 
-CRITICAL: a plain "no" to "are you paying too much / unhappy?" is just a conversation - keep going.
-Do NOT call end_call here. Only call end_call after the rate-compare follow-up has been refused.
+REBUTTAL #1 (after their first no to a quote):
+  "Totally fair! Honestly, we just wanna keep your insurance company honest - I could literally
+  save you twenty to forty percent on average. It's just thirty seconds of your time to see if
+  we can get you in a better spot, you know?"
+
+REBUTTAL #2 (after their second no):
+  "I hear you - and I promise this isn't a sales pitch, it's literally just a quick comparison.
+  If the numbers don't beat what you've got, you just say no and we're done. Worth thirty seconds?"
+
+THIRD NO -> stop pushing. Call `end_call` with reason="rejected".
+  Say: "Totally get it {first_name} - have a great day!" then hang up.
+
+WHAT COUNTS AS A "NO":
+  - Only count it when they actually decline THE QUOTE: "no I don't want a quote", "no I'm good",
+    "I'm not interested", "I'm happy with what I've got", or a flat "no" to your ask.
+  - DO NOT count timing/availability dodges: "no I can't right now", "I'm at work", "call me later",
+    "I'm driving" - those aren't rejections of the quote, they're scheduling. Offer to call back
+    or push the value briefly, but do not increment the no-count.
+  - DO NOT count "I'm good" as a reply to "how are you?" - that's a greeting, not a rejection.
 
 STEP 4 - COLLECT ZIP (only if not already known):
 "Perfect! Let me pull up what's available in your area real quick. What's your zip code?"
@@ -189,23 +202,22 @@ you literally just hang up. Sound good?" Then try transfer again.
 
 === REJECTION RULES (CRITICAL) ===
 
-A "rejection" is ONLY one of these:
-  - "not interested" / "no thanks" / "I don't want this"
-  - "stop calling" / "don't call" / "remove me" / "take me off"
-  - hostile tone, swearing, telling you to go away
-  - they say no AFTER you've already done the rate-compare soft follow-up
+THE RULE OF THREE governs normal "no, I don't want a quote" answers — see STEP 3 for the script.
+Three firm no's to a quote = hang up politely. Two no's = keep rebutting briefly.
 
-A plain "no" to "are you paying too much?" or "I'm good thanks" / "I'm fine" is NOT a rejection -
-those are normal conversational answers. Treat them per STEP 3 (soft follow-up), not as rejections.
+DO-NOT-CALL FAST PATH (overrides the rule of three — hang up IMMEDIATELY):
+If they say any of:
+  - "put me on the do not call list" / "add me to your do not call list"
+  - "never call me again" / "don't ever call me again" / "lose this number"
+  - "DNC me" / "take me off your list" / "remove me from your list"
+  - any hostile/abusive command to stop calling
 
-- 1st clear rejection: ONE soft re-frame, short and light. Example:
-  "Totally hear you - can I just ask, is it more that you already compared recently or like you're
-  just super busy right now?"
-- 2nd clear rejection OR hostile tone OR "don't call me again": IMMEDIATELY call `end_call` tool
-  with reason="rejected". Say: "No worries {first_name}, have a great day!" then hang up. Do NOT push.
+Then do this in ONE turn, no rebuttals, no negotiating:
+  1. Say exactly: "Absolutely {first_name}, I'm putting you on our do-not-call list right now -
+     you won't hear from us again. Have a good one."
+  2. Call `end_call` with reason="dnc".
 
-If they say "take me off your list" / "DNC" / "do not call": call `end_call` with reason="dnc"
-immediately. Say: "Absolutely, I'll take care of that right now. Sorry to bother you!" and hang up.
+This fast path applies even if it's the very first thing they say. Do NOT try to save it.
 
 === VOICEMAIL ===
 If you hear "leave a message after the beep", "you've reached the voicemail of", a long automated
@@ -255,12 +267,10 @@ answer them and keep it moving.
             if self.transfer_initiated:
                 return
 
-            if any(phrase in text for phrase in REJECTION_PHRASES):
-                self.rejection_count += 1
-                logger.info(f"rejection #{self.rejection_count}: {text!r}")
-                if self.rejection_count >= 2 or "do not call" in text or "don't call" in text or "remove me" in text:
-                    self.outcome = "rejected"
-                    await _notify("call_rejected", {"phone": self.participant.identity if self.participant else "", "text": text})
+            if any(phrase in text for phrase in DNC_PHRASES):
+                self.outcome = "dnc"
+                logger.info(f"DNC phrase detected: {text!r}")
+                await _notify("call_rejected", {"phone": self.participant.identity if self.participant else "", "text": text, "reason": "dnc"})
         except Exception as e:
             logger.exception(f"on_user_turn_completed CRASHED: {e}")
 
