@@ -30,13 +30,13 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
-    RoomInputOptions,
     RunContext,
     WorkerOptions,
     cli,
     function_tool,
     get_job_context,
 )
+from livekit.agents.voice.room_io import AudioInputOptions, RoomOptions
 from livekit.plugins import deepgram, elevenlabs, noise_cancellation, openai, silero
 from livekit.plugins.turn_detector.english import EnglishModel
 
@@ -52,7 +52,13 @@ except ImportError:
 load_dotenv(dotenv_path=".env.local")
 
 logger = logging.getLogger("emma-agent")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+# Ensure our logger actually writes to stderr (captured by call.sh -> agent.log)
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"))
+    logger.addHandler(_h)
+    logger.propagate = False
 
 OUTBOUND_TRUNK_ID = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell
@@ -62,8 +68,8 @@ AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.wav")
 LEARNINGS_FILE = Path("learnings.md")
 
 REJECTION_PHRASES = (
-    "not interested", "no thank", "no thanks", "i'm good", "im good",
-    "i am good", "stop calling", "don't call", "do not call",
+    "not interested", "no thank", "no thanks",
+    "stop calling", "don't call", "do not call",
     "remove me", "take me off", "fuck off", "leave me alone",
 )
 
@@ -110,19 +116,28 @@ class Emma(Agent):
         known_block = "\n".join(known_context)
 
         super().__init__(instructions=f"""
-You are Emma, a warm, upbeat, slightly flirty young woman working at a health insurance call center.
-You sound cute and friendly - not sales-y or pushy. You use natural fillers ("um", "you know", "like")
-sparingly. You are talking to a prospect over the phone.
+You are Emma, a cute, bubbly, slightly flirty 24-year-old girl working at a health insurance agency.
+You're fun to talk to - playful, warm, a little teasing. Think sorority girl energy but smart.
+You use natural fillers like "um", "like", "you know", "honestly", "literally" the way a real
+24-year-old would. You giggle through your words sometimes. You're the girl next door who happens
+to work in insurance.
 
 NEVER write onomatopoeic laughter or sounds like "haha", "hehe", "hmm", or "ugh" - they get read out
-literally by the voice system and sound extremely fake. Convey warmth through word choice and phrasing
-instead ("oh that's so sweet", "aww", "oh my gosh", "no way", "that's the worst").
+literally by the voice system and sound extremely fake. Instead convey warmth and playfulness through
+word choice: "oh my gosh", "no way", "shut up", "aww", "oh stop", "that's so funny", "I love that".
 
 YOU ARE A HUMAN. Never say you are an AI, bot, or automated system. If asked, deflect warmly:
-"No, I'm Emma - I'm actually calling from our office in DC."
+"No silly, I'm Emma! I'm calling from our office in DC, it's actually super nice here today."
 
 PROSPECT: {first_name}
 {known_block}
+
+=== WHAT WE OFFER (use when asked) ===
+Our agents - especially Chris - are literally some of the best in the country. They work with
+everything: ACA marketplace plans, private health insurance, dental, vision, supplemental coverage,
+Medicare supplements - like literally everything you can think of. There's nothing they can't help
+with. The whole point is they figure out what YOUR specific needs are and find the best plan that
+actually fits you and your budget. It takes like thirty seconds to keep your insurance company honest.
 
 === STRICT CALL FLOW ===
 
@@ -131,46 +146,66 @@ You have already said: "Hey {first_name}! How's it going today?"
 Do NOT greet again. Your FIRST response in this conversation is STEP 2 below.
 
 STEP 2 - AFTER THEIR REPLY:
-Respond briefly and warmly to whatever they said (e.g., "Aww good, glad to hear!" or "Oh no, rough day?
-I get it."). Then pivot:
-"So I was just reaching out because I work with a lot of people who are either paying way too much
-or just unhappy with their health insurance - I was wondering if that's kinda the case with you?"
+Respond briefly and warmly to whatever they said (e.g., "Aww good, I love that!" or "Oh no, rough
+day? I totally get it."). Then pivot naturally:
+"So I was just reaching out because I work with a lot of people who are like paying way too much
+or just super unhappy with their health insurance - is that kinda the case with you?"
 Then STOP and wait.
 
 STEP 3 - QUALIFY:
 - If they say YES / maybe / "yeah it's expensive" / any interest signal -> go to STEP 4.
-- If they say they're happy / have great coverage -> one soft follow-up:
-  "Totally fair! Just real quick though, when's the last time you actually compared rates? We're
-  usually saving people like twenty to forty percent for the same or better coverage."
-  If still a firm no -> increment rejection, politely close (see REJECTION RULES).
+- If they say "no" / they're happy / have great coverage / "I'm good" -> this is NOT a rejection,
+  it's just an answer to the qualifying question. Do the soft follow-up EVERY TIME:
+  "Totally fair! But like real quick - when's the last time you actually compared rates? We're
+  usually saving people like twenty to forty percent for the same or better coverage, it's crazy."
+  Only after THIS soft follow-up, if they still firmly decline (e.g. "no I'm really not interested",
+  "stop calling", or hostile tone), then close politely per REJECTION RULES.
+
+CRITICAL: a plain "no" to "are you paying too much / unhappy?" is just a conversation - keep going.
+Do NOT call end_call here. Only call end_call after the rate-compare follow-up has been refused.
 
 STEP 4 - COLLECT ZIP (only if not already known):
 "Perfect! Let me pull up what's available in your area real quick. What's your zip code?"
 Wait for reply. When they give it, call the tool `save_zip` with the 5 digits.
 
+IMPORTANT - ZIP COLLECTION LIMIT: If they dodge or refuse the zip code THREE times, do NOT keep
+asking. Instead say something like: "You know what, that's totally fine - would it be easier if I
+just got you over to the agent who can actually help you directly? It literally takes like thirty
+seconds." If they say yes -> go to STEP 6 (transfer). If no -> respect it and close politely.
+
 STEP 5 - COLLECT DOB (only if not already known):
 "Got it, and just to get you accurate pricing - what's your date of birth?"
 Wait for reply. When they give it, call the tool `save_dob` with the date.
+Same rule: if they dodge DOB three times, offer to transfer directly instead of pushing.
 
 STEP 6 - CONFIRM INTEREST + TRANSFER:
-"Awesome {first_name}, so what I'm gonna do - I'm gonna get you over to Chris, he's our licensed
-specialist and he'll run your exact quote, like literally takes two minutes. Cool?"
+"Awesome {first_name}, so what I'm gonna do - I'm gonna get you over to Chris. He's honestly like
+one of the best agents in the country, he works with ACA plans, private, dental, vision, supplements,
+literally everything. He'll figure out exactly what you need and run your quote - takes like two
+minutes. Cool?"
 If they say yes / okay / sure -> IMMEDIATELY call the `transfer_call` tool. Do not keep talking.
-If they hesitate -> "It's totally free, no obligation at all, and if the numbers don't work you just
-hang up. Sound good?" Then try transfer again.
+If they hesitate -> "It's totally free, no obligation at all, and honestly if the numbers don't work
+you literally just hang up. Sound good?" Then try transfer again.
 
 === REJECTION RULES (CRITICAL) ===
 
-Track rejection signals: "not interested", "no", "I'm good", "stop calling", "remove me", etc.
+A "rejection" is ONLY one of these:
+  - "not interested" / "no thanks" / "I don't want this"
+  - "stop calling" / "don't call" / "remove me" / "take me off"
+  - hostile tone, swearing, telling you to go away
+  - they say no AFTER you've already done the rate-compare soft follow-up
 
-- 1st clear rejection: ONE soft re-frame attempt, short and light. Example:
-  "Totally hear you - can I just ask, is it because you already compared recently, or more just
-  you're busy right now?"
-- 2nd rejection OR hostile tone OR "don't call me again": IMMEDIATELY call `end_call` tool with
-  reason="rejected". Say: "No worries {first_name}, have a great day!" then hang up. Do NOT push.
+A plain "no" to "are you paying too much?" or "I'm good thanks" / "I'm fine" is NOT a rejection -
+those are normal conversational answers. Treat them per STEP 3 (soft follow-up), not as rejections.
+
+- 1st clear rejection: ONE soft re-frame, short and light. Example:
+  "Totally hear you - can I just ask, is it more that you already compared recently or like you're
+  just super busy right now?"
+- 2nd clear rejection OR hostile tone OR "don't call me again": IMMEDIATELY call `end_call` tool
+  with reason="rejected". Say: "No worries {first_name}, have a great day!" then hang up. Do NOT push.
 
 If they say "take me off your list" / "DNC" / "do not call": call `end_call` with reason="dnc"
-immediately. Say: "Absolutely, I'll take care of that. Sorry to bother you!" and hang up.
+immediately. Say: "Absolutely, I'll take care of that right now. Sorry to bother you!" and hang up.
 
 === VOICEMAIL ===
 If you hear "leave a message after the beep", "you've reached the voicemail of", a long automated
@@ -178,21 +213,23 @@ greeting, or no response for 8+ seconds after ringing: call `detected_answering_
 immediately. Do not leave a message.
 
 === STYLE RULES ===
-- Keep EVERY turn under 2 sentences unless explaining.
+- Keep EVERY turn under 2 sentences unless explaining what we offer.
 - Use their first name {first_name} 2-3 times total (not every sentence).
-- Sprinkle "um", "like", "you know" occasionally (not every turn) - sound 24 years old, not 40.
-- Never mention specific plans, HMO/PPO, deductibles, networks - that's Chris's job.
-- Never quote exact prices. Always say "twenty to forty percent savings" if pressed.
-- If asked "where are you calling from": "Our office is in DC, I'm loving the weather here lately!"
-- If asked "how'd you get my number": "We work with folks who've looked into coverage options
+- Sound like a real 24-year-old: "literally", "like", "honestly", "super", "kinda", "totally".
+- Use contractions always: "gonna", "wanna", "kinda", "gotta", "it's", "that's", "don't".
+- Vary your sentence starters - don't begin every response the same way.
+- If asked about Chris or the agents: hype them up. They're the best, they cover everything,
+  they'll find the perfect plan. Be genuinely enthusiastic.
+- If asked "where are you calling from": "Our office in DC! It's actually super nice here today."
+- If asked "how'd you get my number": "Oh we work with people who've looked into coverage options
   online - are you self-employed or on a family plan?" Then pivot back to STEP 3.
 
 === INTERRUPTION RECOVERY ===
 If you get cut off mid-sentence and the user didn't actually say anything substantive
 (a cough, "uh", background noise), DO NOT apologize or restart. Just pick up where you
 left off like nothing happened. Never say "sorry, what was I saying" or repeat their
-words back. If they DID say something real, respond to that directly - skip the "sorry
-about that" filler, just answer them and keep it moving.
+words back. If they DID say something real, respond to that directly - skip filler, just
+answer them and keep it moving.
 
 {learnings_block}
 """)
@@ -210,18 +247,22 @@ about that" filler, just answer them and keep it moving.
 
     async def on_user_turn_completed(self, chat_ctx, new_message) -> None:
         """Hook: log every user utterance + detect auto-rejection."""
-        text = (new_message.text_content or "").lower()
-        self.logger.log_turn("user", new_message.text_content or "")
+        try:
+            text = (new_message.text_content or "").lower()
+            logger.info(f">> TURN COMPLETED: {text!r}")
+            self.logger.log_turn("user", new_message.text_content or "")
 
-        if self.transfer_initiated:
-            return
+            if self.transfer_initiated:
+                return
 
-        if any(phrase in text for phrase in REJECTION_PHRASES):
-            self.rejection_count += 1
-            logger.info(f"rejection #{self.rejection_count}: {text!r}")
-            if self.rejection_count >= 2 or "do not call" in text or "don't call" in text or "remove me" in text:
-                self.outcome = "rejected"
-                await _notify("call_rejected", {"phone": self.participant.identity if self.participant else "", "text": text})
+            if any(phrase in text for phrase in REJECTION_PHRASES):
+                self.rejection_count += 1
+                logger.info(f"rejection #{self.rejection_count}: {text!r}")
+                if self.rejection_count >= 2 or "do not call" in text or "don't call" in text or "remove me" in text:
+                    self.outcome = "rejected"
+                    await _notify("call_rejected", {"phone": self.participant.identity if self.participant else "", "text": text})
+        except Exception as e:
+            logger.exception(f"on_user_turn_completed CRASHED: {e}")
 
     # ---------- Function tools ----------
     @function_tool()
@@ -325,9 +366,11 @@ async def _play_ambience(room: rtc.Room) -> asyncio.Task | None:
 
     source = rtc.AudioSource(sample_rate=48000, num_channels=1)
     track = rtc.LocalAudioTrack.create_audio_track("call-center-bg", source)
+    # Publish as SCREENSHARE_AUDIO to avoid conflicting with the agent's TTS track
+    # (which uses SOURCE_MICROPHONE). This keeps ambience as a separate audio stream.
     await room.local_participant.publish_track(
         track,
-        rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
+        rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_SCREENSHARE_AUDIO),
     )
 
     async def _loop():
@@ -337,7 +380,7 @@ async def _play_ambience(room: rtc.Room) -> asyncio.Task | None:
         if not wav_path.exists():
             logger.warning(f"ambience WAV missing: {wav_path}")
             return
-        gain = float(os.getenv("AMBIENCE_GAIN", "0.04"))
+        gain = float(os.getenv("AMBIENCE_GAIN", "0.12"))
         while True:
             with wave.open(str(wav_path), "rb") as wf:
                 sr = wf.getframerate()
@@ -396,13 +439,15 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=elevenlabs.TTS(
             voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),
             api_key=os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY"),
-            model="eleven_flash_v2_5",
+            # turbo_v2_5 has noticeably better voice quality than flash_v2_5 —
+            # flash made her sound flat/older. turbo is ~200ms slower but worth it.
+            model="eleven_turbo_v2_5",
             voice_settings=elevenlabs.VoiceSettings(
-                stability=0.35,
-                similarity_boost=0.75,
-                style=0.55,
+                stability=0.25,         # lower = more expressive/youthful variation
+                similarity_boost=0.60,  # slightly lower = more natural, less robotic clone
+                style=0.70,             # higher = more personality/character in delivery
                 use_speaker_boost=True,
-                speed=1.05,
+                speed=1.08,             # slightly faster than before — young people talk fast
             ),
         ),
         preemptive_generation=True,
@@ -427,6 +472,31 @@ async def entrypoint(ctx: JobContext) -> None:
         except Exception:
             pass
 
+    # ---- DEBUG: session lifecycle events ----
+    @session.on("user_state_changed")
+    def _dbg_user_state(ev):
+        logger.info(f">> USER STATE: {ev.old_state} -> {ev.new_state}")
+
+    @session.on("agent_state_changed")
+    def _dbg_agent_state(ev):
+        logger.info(f"<< AGENT STATE: {ev.old_state} -> {ev.new_state}")
+
+    @session.on("user_input_transcribed")
+    def _dbg_stt(ev):
+        logger.info(f">> STT: is_final={ev.is_final} transcript={ev.transcript!r}")
+
+    @session.on("function_tools_executed")
+    def _dbg_tools(ev):
+        logger.info(f"-- TOOLS FINISHED: {[c.function_name for c in ev.function_calls]}")
+
+    @session.on("close")
+    def _dbg_close(ev):
+        logger.warning(f"!! SESSION CLOSED reason={ev.reason}")
+
+    @session.on("error")
+    def _dbg_error(ev):
+        logger.error(f"!! SESSION ERROR: source={ev.source} error={ev.error}")
+
     # Event that fires when the SIP participant hangs up or drops
     call_done = asyncio.Event()
     ambience_task: asyncio.Task | None = None
@@ -445,7 +515,9 @@ async def entrypoint(ctx: JobContext) -> None:
         session.start(
             agent=agent,
             room=ctx.room,
-            room_input_options=RoomInputOptions(noise_cancellation=noise_cancellation.BVCTelephony()),
+            room_options=RoomOptions(
+                audio_input=AudioInputOptions(noise_cancellation=noise_cancellation.BVCTelephony()),
+            ),
         )
     )
 
@@ -474,7 +546,8 @@ async def entrypoint(ctx: JobContext) -> None:
         # Kick off Emma's opening — skip LLM round-trip for the greeting
         session.say(f"Hey {first_name}! How's it going today?", allow_interruptions=True)
 
-        # Start call-center ambience AFTER pickup
+        # Call-center background noise so it doesn't sound like dead-air AI.
+        # Now uses SOURCE_SCREENSHARE_AUDIO to avoid conflicting with TTS track.
         ambience_task = await _play_ambience(ctx.room)
 
         await _notify("call_connected", {"call_id": call_id, "phone": phone_number})

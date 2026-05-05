@@ -1,46 +1,72 @@
 # Emma - Outbound Health Insurance Agent
 
-## 🚀 HOW TO RUN - ONE COMMAND
+## 🛠️ ONE-TIME SETUP (WSL)
 
-**From Windows PowerShell or any terminal:**
+Do this once. Skip to "Run a Call" on every run after.
+
+**1. Open Ubuntu / WSL** (Start menu → "Ubuntu") and `cd` to the project:
 
 ```bash
-wsl /mnt/d/Coding-projects/outbound-caller-python-main/call.sh 9415180701 Chris
+cd /mnt/d/Coding-projects/outbound-caller-python-main
 ```
 
-**From inside WSL (already in project dir):**
+**2. Install Python tooling** (skip if already installed):
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+```
+
+**3. Create the Linux-native venv** (must be `venv-wsl/` — `call.sh` expects this name; the Windows-side `venv/` will not work in WSL):
+
+```bash
+python3 -m venv venv-wsl
+source venv-wsl/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**4. Confirm `.env.local` has** `LIVEKIT_*`, `SIP_OUTBOUND_TRUNK_ID`, `TRANSFER_TO_NUMBER`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`.
+
+**5. Make `call.sh` executable** (once):
+
+```bash
+chmod +x call.sh
+```
+
+---
+
+## 🚀 RUN A CALL
+
+**From inside WSL** (project dir):
 
 ```bash
 ./call.sh 9415180701 Chris
 ```
 
+**From Windows PowerShell** (note: must be `wsl.exe`, not just `wsl` — and run from PowerShell, NOT from inside a WSL shell):
+
+```powershell
+wsl.exe -d Ubuntu -- bash -lc "cd /mnt/d/Coding-projects/outbound-caller-python-main && ./call.sh 9415180701 Chris"
+```
+
 Format: `call.sh <phone-number> <first-name>`
 
-That's it. The script starts the agent, starts the dashboard, and dispatches the call.
+The script activates the venv, starts the agent + dashboard if not already running, then dispatches the call.
 
 ---
 
-## 👀 HOW TO WATCH THE CALL LIVE
+## 👀 WATCH THE TRANSCRIPT LIVE — *ALWAYS THE LAST STEP*
 
-You have **two options** — use either or both:
-
-### Option A: Browser Dashboard (recommended)
-
-After running `./call.sh`, open in your browser:
-
-**→ <http://localhost:8080>**
-
-You'll see live transcripts, captured ZIP/DOB, call status, and history.
-
-### Option B: Terminal Stream
-
-Open a **second WSL terminal** and run:
+After `./call.sh` returns, open a **second WSL terminal** and run:
 
 ```bash
 tail -f /tmp/emma-agent.log
 ```
 
-You'll see every line the agent logs — user transcripts, Emma's responses, tool calls, errors. Great for debugging.
+You'll see every transcript line, Emma's replies, tool calls, and errors stream in real time. Keep this open for the entire call.
+
+Optional browser view: <http://localhost:8080> — same data with ZIP/DOB capture and call history.
 
 ---
 
@@ -69,11 +95,12 @@ To swap voices:
    ELEVENLABS_VOICE_ID=<your-chosen-id>
    ```
 
-4. Restart the agent:
+4. Restart the agent, then watch the transcript:
 
    ```bash
    pkill -f "python3 agent.py"
    ./call.sh 9415180701
+   tail -f /tmp/emma-agent.log    # always the last step
    ```
 
 **IMPORTANT:** You want the **Voice Library**, NOT ElevenLabs "Agents." The Agents product is a competing all-in-one product we don't use. Just browse voices and grab IDs.
