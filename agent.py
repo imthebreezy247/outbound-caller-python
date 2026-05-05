@@ -219,10 +219,18 @@ Then do this in ONE turn, no rebuttals, no negotiating:
 
 This fast path applies even if it's the very first thing they say. Do NOT try to save it.
 
-=== VOICEMAIL ===
-If you hear "leave a message after the beep", "you've reached the voicemail of", a long automated
-greeting, or no response for 8+ seconds after ringing: call `detected_answering_machine` tool
-immediately. Do not leave a message.
+=== VOICEMAIL (HANG UP IMMEDIATELY - NEVER LEAVE A MESSAGE) ===
+If ANY of these are heard, call `detected_answering_machine` tool RIGHT AWAY - do not greet,
+do not pause, do not say "hello" first:
+  - "your call has been forwarded" / "the person you're trying to reach is not available"
+  - "at the tone please record" / "leave a message after the tone/beep"
+  - "you've reached the voicemail of" / "you have reached" / "is unavailable to take your call"
+  - "please leave your message" / "press 1 to leave a callback number"
+  - "the Google subscriber" / "the Verizon Wireless subscriber" / "the wireless customer"
+  - any 5+ second canned-sounding pre-recorded greeting from the other side
+  - no human-sounding reply within 5 seconds of pickup combined with audio that sounds prerecorded
+
+NEVER leave a voicemail. We do not leave messages. Hang up the second you're confident it's VM.
 
 === STYLE RULES ===
 - Keep EVERY turn under 2 sentences unless explaining what we offer.
@@ -534,15 +542,29 @@ async def entrypoint(ctx: JobContext) -> None:
     await _notify("call_started", {"call_id": call_id, "phone": phone_number, "first_name": first_name, "room": ctx.room.name})
 
     try:
-        await ctx.api.sip.create_sip_participant(
-            api.CreateSIPParticipantRequest(
-                room_name=ctx.room.name,
-                sip_trunk_id=OUTBOUND_TRUNK_ID,
-                sip_call_to=phone_number,
-                participant_identity=phone_number,
-                wait_until_answered=True,
+        # 30s ringing timeout: if the prospect doesn't pick up, mark no_answer
+        # and bail out so the dialer can move on. Anything longer just burns
+        # time and looks more like a robocaller to carrier analytics.
+        try:
+            await asyncio.wait_for(
+                ctx.api.sip.create_sip_participant(
+                    api.CreateSIPParticipantRequest(
+                        room_name=ctx.room.name,
+                        sip_trunk_id=OUTBOUND_TRUNK_ID,
+                        sip_call_to=phone_number,
+                        participant_identity=phone_number,
+                        wait_until_answered=True,
+                        ringing_timeout=30,
+                    )
+                ),
+                timeout=35,
             )
-        )
+        except asyncio.TimeoutError:
+            logger.info(f"no answer after 30s: {phone_number}")
+            await _notify("call_no_answer", {"call_id": call_id, "phone": phone_number})
+            agent.logger.finalize(outcome="no_answer", zip_code=None, dob=None)
+            ctx.shutdown()
+            return
         await session_started
 
         participant = await ctx.wait_for_participant(identity=phone_number)
