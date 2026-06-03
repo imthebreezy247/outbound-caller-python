@@ -18,10 +18,29 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 
 import transcript_logger as tl
 import scrubber
+import agent_db
+import agent_state
+from agent_state import router as agent_state_router
+from transfer_queue import router as transfer_router
 
 app = FastAPI(title="Emma Dashboard")
+app.include_router(transfer_router)
+app.include_router(agent_state_router)
 
 _event_queues: set[asyncio.Queue] = set()
+_background_reaper: asyncio.Task | None = None
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    global _background_reaper
+    _background_reaper = agent_state.start_background_tasks()
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    if _background_reaper and not _background_reaper.done():
+        _background_reaper.cancel()
 
 
 async def agent_event(event_type: str, data: dict[str, Any]) -> None:
@@ -295,3 +314,257 @@ loadStats();loadCalls();loadDnc();setInterval(()=>{loadStats();loadCalls();loadD
 @app.get("/", response_class=HTMLResponse)
 def index():
     return _INDEX_HTML
+
+
+# ---------------------------------------------------------------------------
+# Agent presence pages
+# ---------------------------------------------------------------------------
+
+_AGENT_PAGE_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>{name} — Agent Presence</title>
+<style>
+body{{margin:0;font:16px/1.5 -apple-system,Segoe UI,Inter,sans-serif;background:#0b0f1a;color:#e5ecf5;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px}}
+.card{{background:#141a2a;border:1px solid #22304f;border-radius:14px;padding:28px;max-width:420px;width:100%;text-align:center}}
+h1{{margin:0 0 4px;font-size:24px}}.sub{{color:#8492a6;font-size:13px;margin-bottom:24px}}
+.status{{font-size:36px;font-weight:700;letter-spacing:0.5px;padding:18px;border-radius:12px;margin-bottom:24px}}
+.status.Available{{background:#143a2e;color:#3dd6a5}}
+.status.Busy{{background:#14293a;color:#6bb6f5}}
+.status.Wrap-Up{{background:#3a2c14;color:#f5c56b}}
+.status.Lunch{{background:#3a1f14;color:#f59c6b}}
+.status.Offline{{background:#222a3a;color:#8492a6}}
+.btns{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}}
+button{{padding:14px 8px;background:#0b0f1a;color:#e5ecf5;border:1px solid #22304f;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}}
+button:hover{{border-color:#3dd6a5}}button.active{{background:#3dd6a5;color:#0b0f1a;border-color:#3dd6a5}}
+.meta{{margin-top:18px;font-size:12px;color:#8492a6;display:flex;justify-content:space-between;gap:8px}}
+.dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3dd6a5;margin-right:6px;animation:pulse 2s infinite}}
+@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
+.warn{{margin-top:12px;color:#f5c56b;font-size:12px}}
+</style></head><body>
+<div class="card">
+  <h1>{name}</h1>
+  <div class="sub">{email} · cell {cell} · licensed {states}</div>
+  <div id="status" class="status Offline">OFFLINE</div>
+  <div class="btns">
+    <button onclick="setStatus('Available')" data-act="Available">Available</button>
+    <button onclick="setStatus('Lunch')" data-act="Lunch">Lunch</button>
+    <button onclick="setStatus('Offline')" data-act="Offline">Offline</button>
+  </div>
+  <div class="meta">
+    <span><span class="dot"></span><span id="conn">connected</span></span>
+    <span id="hb-ts">--</span>
+  </div>
+  <div class="warn">When a call comes in, your phone will ring at <b>{cell}</b>. Keep this page open.</div>
+</div>
+<script>
+const AGENT_ID = {agent_id};
+const $ = s => document.querySelector(s);
+
+function render(activity) {{
+  const st = $('#status');
+  st.className = 'status ' + activity;
+  st.textContent = activity.toUpperCase();
+  document.querySelectorAll('button[data-act]').forEach(b => {{
+    b.classList.toggle('active', b.dataset.act === activity);
+  }});
+}}
+
+async function setStatus(activity) {{
+  const r = await fetch(`/api/agents/${{AGENT_ID}}/activity`, {{
+    method: 'PUT',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{activity}}),
+  }});
+  if (r.ok) {{
+    const a = await r.json();
+    render(a.current_activity);
+  }} else {{
+    alert('failed: ' + r.status);
+  }}
+}}
+
+async function heartbeat() {{
+  try {{
+    await fetch(`/api/agents/${{AGENT_ID}}/heartbeat`, {{method:'POST'}});
+    $('#hb-ts').textContent = 'hb ' + new Date().toLocaleTimeString();
+    $('#conn').textContent = 'connected';
+  }} catch(e) {{
+    $('#conn').textContent = 'offline';
+  }}
+}}
+
+async function refresh() {{
+  try {{
+    const a = await fetch(`/api/agents/${{AGENT_ID}}`).then(r => r.json());
+    render(a.current_activity);
+  }} catch(e) {{}}
+}}
+
+refresh();
+heartbeat();
+setInterval(heartbeat, 30000);
+setInterval(refresh, 5000);
+</script>
+</body></html>
+"""
+
+
+@app.get("/agent/{agent_id}", response_class=HTMLResponse)
+def agent_page(agent_id: int):
+    agent = agent_db.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, f"no agent with id={agent_id}")
+    return _AGENT_PAGE_HTML.format(
+        agent_id=agent_id,
+        name=agent["name"],
+        email=agent.get("email") or "—",
+        cell=agent["cell_phone"],
+        states=", ".join(agent.get("state_licenses") or []) or "—",
+    )
+
+
+# Admin view of all agents + recent routing decisions — quick at-a-glance for
+# the sales manager. Phase-2 adds the Recent Routings panel below the agents
+# table, color-coded by temperature so hot leads + compliance escalations pop.
+_AGENTS_INDEX_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Agents — Clairvo</title>
+<style>
+body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Inter,sans-serif;background:#0b0f1a;color:#e5ecf5}
+header{padding:14px 22px;background:#141a2a;border-bottom:1px solid #22304f;display:flex;align-items:center;gap:16px}
+h1{margin:0;font-size:18px;font-weight:600}
+main{padding:20px;max-width:1200px;margin:0 auto}
+section{margin-bottom:30px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8492a6;margin:0 0 10px}
+table{width:100%;border-collapse:collapse;background:#141a2a;border:1px solid #22304f;border-radius:10px;overflow:hidden}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #22304f;vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8492a6;background:#0e1422}
+tr:last-child td{border-bottom:none}
+.pill{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;display:inline-block}
+.pill.Available{background:#143a2e;color:#3dd6a5}.pill.Busy{background:#14293a;color:#6bb6f5}
+.pill.Wrap-Up{background:#3a2c14;color:#f5c56b}.pill.Lunch{background:#3a1f14;color:#f59c6b}
+.pill.Offline{background:#222a3a;color:#8492a6}
+.temp{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;text-transform:uppercase}
+.temp.hot{background:#3a1620;color:#ff6b7a}
+.temp.warm{background:#143a2e;color:#3dd6a5}
+.temp.compliance{background:#3a2c14;color:#f5c56b}
+.temp.callback{background:#14293a;color:#6bb6f5}
+.src{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;color:#8492a6;background:#222a3a}
+.src.no_agent_timeout{background:#3a1620;color:#ff6b7a}
+.src.prospect_requested{background:#143a2e;color:#3dd6a5}
+.btn-sm{font-size:11px;padding:3px 8px;background:#0b0f1a;color:#e5ecf5;border:1px solid #22304f;border-radius:6px;cursor:pointer;margin-right:4px}
+.btn-sm:hover{border-color:#3dd6a5}
+.outcome{font-size:11px;color:#8492a6}
+.outcome.bridged{color:#3dd6a5}.outcome.abandoned,.outcome.no_agent,.outcome.failed{color:#ff6b7a}
+a{color:#3dd6a5;text-decoration:none}a:hover{text-decoration:underline}
+.hb-stale{color:#ff6b7a}
+.mono{font-family:ui-monospace,monospace;font-size:12px}
+.dim{color:#8492a6}
+</style></head><body>
+<header><h1>Agents</h1><span style="color:#8492a6">live presence + routing</span></header>
+<main>
+  <section>
+    <h2>Live presence</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Status</th><th>States</th><th>Cell</th><th>Heartbeat</th><th>Link</th></tr></thead>
+      <tbody id="agent-rows"></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Recent routings (last 50)</h2>
+    <table>
+      <thead><tr><th>When</th><th>Temp</th><th>Lead</th><th>State</th><th>Agent</th><th>Outcome</th><th>Latency</th></tr></thead>
+      <tbody id="routing-rows"></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Pending callbacks</h2>
+    <table>
+      <thead><tr><th>Added</th><th>Lead</th><th>State</th><th>Source</th><th>Requested</th><th>Attempts</th><th>Actions</th></tr></thead>
+      <tbody id="cb-rows"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+function ago(ts) {
+  if (!ts) return '—';
+  const d = (Date.now()/1000) - ts;
+  if (d < 60) return Math.round(d)+'s ago';
+  if (d < 3600) return Math.round(d/60)+'m ago';
+  return Math.round(d/3600)+'h ago';
+}
+function ms(a, b) {
+  if (!a || !b) return '—';
+  const d = Math.max(0, b - a);
+  return d < 60 ? d.toFixed(1)+'s' : (d/60).toFixed(1)+'m';
+}
+async function loadAgents() {
+  const agents = await fetch('/api/agents').then(r=>r.json());
+  const now = Date.now()/1000;
+  document.getElementById('agent-rows').innerHTML = agents.map(a => {
+    const hb = a.last_heartbeat ? (now - a.last_heartbeat) : null;
+    const hbCls = (hb===null || hb>90) ? 'hb-stale' : '';
+    const hbTxt = hb===null ? 'never' : (hb<60 ? Math.round(hb)+'s ago' : Math.round(hb/60)+'m ago');
+    const states = (a.state_licenses||[]).join(', ') || '—';
+    return `<tr>
+      <td>${a.name}${a.is_manager?' <span style="color:#f5c56b;font-size:11px">★ mgr</span>':''}</td>
+      <td><span class="pill ${a.current_activity}">${a.current_activity}</span></td>
+      <td>${states}</td>
+      <td class="mono">${a.cell_phone}</td>
+      <td class="${hbCls}">${hbTxt}</td>
+      <td><a href="/agent/${a.id}">presence →</a></td>
+    </tr>`;
+  }).join('');
+}
+async function loadRoutings() {
+  const log = await fetch('/api/transfer/log?limit=50').then(r=>r.json());
+  document.getElementById('routing-rows').innerHTML = log.map(r => {
+    const temp = (r.temperature||'warm').toLowerCase();
+    const outcome = r.outcome || (r.assigned_at ? 'in-flight' : 'queued');
+    const latency = ms(r.prepared_at, r.accepted_at);
+    const agent = r.agent_name || (r.worker_sid ? r.worker_sid.slice(0,8)+'…' : '—');
+    return `<tr>
+      <td class="dim">${ago(r.prepared_at)}</td>
+      <td><span class="temp ${temp}">${temp}</span></td>
+      <td class="mono">${r.lead_phone||''} <span class="dim">${r.first_name||''}</span></td>
+      <td>${r.required_state||'—'}</td>
+      <td>${agent}</td>
+      <td><span class="outcome ${outcome}">${outcome}</span></td>
+      <td class="dim">${latency}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="dim" style="text-align:center;padding:20px">no transfers yet</td></tr>';
+}
+async function loadCallbacks() {
+  const cbs = await fetch('/api/transfer/callbacks?status=pending&limit=50').then(r=>r.json());
+  document.getElementById('cb-rows').innerHTML = cbs.map(cb => {
+    return `<tr>
+      <td class="dim">${ago(cb.created_at)}</td>
+      <td class="mono">${cb.lead_phone||''} <span class="dim">${cb.first_name||''}</span></td>
+      <td>${cb.required_state||'—'}</td>
+      <td><span class="src ${cb.source||''}">${cb.source||'—'}</span></td>
+      <td class="dim">${cb.requested_at_local||'ASAP'}</td>
+      <td>${cb.attempts||0}</td>
+      <td>
+        <button class="btn-sm" onclick="cbDone(${cb.id})">mark done</button>
+        <button class="btn-sm" onclick="cbGaveUp(${cb.id})">give up</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="dim" style="text-align:center;padding:20px">no pending callbacks</td></tr>';
+}
+async function cbDone(id) {
+  await fetch(`/api/transfer/callbacks/${id}/completed`, {method:'PUT'});
+  loadCallbacks();
+}
+async function cbGaveUp(id) {
+  if (!confirm('Mark callback #'+id+' as given up?')) return;
+  await fetch(`/api/transfer/callbacks/${id}/gave_up`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:'{}'});
+  loadCallbacks();
+}
+function tick() { loadAgents(); loadRoutings(); loadCallbacks(); }
+tick(); setInterval(tick, 3000);
+</script>
+</body></html>
+"""
+
+
+@app.get("/agents", response_class=HTMLResponse)
+def agents_index():
+    return _AGENTS_INDEX_HTML

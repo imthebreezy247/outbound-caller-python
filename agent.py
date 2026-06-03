@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 from dotenv import load_dotenv
 from livekit import api, rtc
 from livekit.agents import (
@@ -55,7 +56,9 @@ logger = logging.getLogger("emma-agent")
 logger.setLevel(logging.INFO)
 
 OUTBOUND_TRUNK_ID = os.getenv("SIP_OUTBOUND_TRUNK_ID")
-TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell
+TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell (fallback when queue not configured)
+TRANSFER_QUEUE_URL = os.getenv("TRANSFER_QUEUE_URL", "http://localhost:8080/api/transfer/prepare")
+CALLBACKS_URL = os.getenv("CALLBACKS_URL", "http://localhost:8080/api/transfer/callbacks")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")  # gpt-4o-mini default; gpt-4o as fallback
 DEEPGRAM_TTS_MODEL = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")  # young/warm female
 AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.wav")
@@ -241,23 +244,74 @@ about that" filler, just answer them and keep it moving.
         await _notify("dob_captured", {"call_id": self.call_id, "dob": self.collected_dob})
         return f"dob {self.collected_dob} saved"
 
+    async def _resolve_transfer_target(self, temperature: str = "warm") -> str | None:
+        """
+        Call the queue prepare endpoint to stash routing intent (including
+        temperature for priority routing) and learn which Twilio number to REFER
+        to. Falls back to TRANSFER_TO_NUMBER (Chris's cell) if the queue isn't
+        reachable — preserves pre-TaskRouter behaviour so local dev still works
+        without a workspace provisioned.
+        """
+        if not self.participant:
+            return None
+        payload = {
+            "call_id": self.call_id,
+            "lead_phone": self.participant.identity,
+            "first_name": self.first_name,
+            "required_state": self.dial_info.get("state"),
+            "temperature": temperature,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.post(TRANSFER_QUEUE_URL, json=payload)
+                resp.raise_for_status()
+                queue_number = (resp.json() or {}).get("queue_number")
+                if queue_number:
+                    logger.info(f"queue prepare ok ({temperature}); will REFER to {queue_number}")
+                    return queue_number
+                logger.warning("queue prepare returned no queue_number; falling back to TRANSFER_TO")
+        except Exception as e:
+            logger.warning(f"queue prepare failed ({e}); falling back to TRANSFER_TO")
+        return TRANSFER_TO
+
     @function_tool()
-    async def transfer_call(self, ctx: RunContext) -> str:
-        """Warm-transfer the live call to Chris's cell via SIP REFER."""
+    async def transfer_call(self, ctx: RunContext, temperature: str = "warm") -> str:
+        """Warm-transfer the live call to an available human agent via the TaskRouter queue.
+
+        Set `temperature` based on conversation signals:
+          - "hot": prospect is highly interested, asked about pricing, ready to enroll,
+            or said something like "I want to do this now". Jumps the queue. Use sparingly.
+          - "warm" (default): qualified prospect who agreed to a call with the specialist.
+            The normal path after STEP 6.
+          - "compliance": prospect raised a TCPA/DNC concern, asked for a manager,
+            mentioned suing/lawyer, or otherwise needs supervisor attention. Routes
+            to a manager rather than a regular agent.
+
+        Do NOT pick "hot" just because the prospect was friendly — only when they
+        explicitly indicate urgency or readiness-to-buy.
+        """
         if self.transfer_initiated:
             return "already transferring"
-        if not TRANSFER_TO:
-            return "no transfer number configured"
         if not self.participant:
             return "no participant"
 
+        # Defensive normalization in case the LLM hallucinates a value.
+        temp = (temperature or "warm").lower()
+        if temp not in ("hot", "warm", "compliance"):
+            temp = "warm"
+
+        transfer_target = await self._resolve_transfer_target(temperature=temp)
+        if not transfer_target:
+            return "no transfer number configured"
+
         self.transfer_initiated = True
         self.outcome = "transferred"
-        logger.info(f"transferring {self.participant.identity} -> {TRANSFER_TO}")
+        logger.info(f"transferring {self.participant.identity} -> {transfer_target} (temp={temp})")
         await _notify("call_transferring", {
             "call_id": self.call_id,
             "phone": self.participant.identity,
-            "transfer_to": TRANSFER_TO,
+            "transfer_to": transfer_target,
+            "temperature": temp,
         })
 
         job_ctx = get_job_context()
@@ -266,7 +320,7 @@ about that" filler, just answer them and keep it moving.
                 api.TransferSIPParticipantRequest(
                     room_name=job_ctx.room.name,
                     participant_identity=self.participant.identity,
-                    transfer_to=f"tel:{TRANSFER_TO}",
+                    transfer_to=f"tel:{transfer_target}",
                     play_dialtone=True,
                 )
             )
@@ -280,6 +334,50 @@ about that" filler, just answer them and keep it moving.
             )
             await asyncio.sleep(3)
             await self._hangup()
+            return f"error: {e}"
+
+    @function_tool()
+    async def schedule_callback(
+        self,
+        ctx: RunContext,
+        requested_time: str = "ASAP",
+    ) -> str:
+        """Record a callback the prospect requested. Use this when the prospect says
+        something like "can you call me back later", "now's not a good time, try
+        tomorrow", or "I want to talk but I'm driving — call me in an hour".
+
+        Args:
+            requested_time: the prospect's own words for when to call back, e.g.
+                "tomorrow at 3pm", "after 5", "in an hour". Pass "ASAP" when they
+                don't specify. We don't parse this; it's logged verbatim so the
+                dispatcher can read it.
+
+        After calling this tool, warmly confirm: "Got it, {first_name}, we'll
+        give you a call back {requested_time}. Talk soon!" then call end_call.
+        """
+        payload = {
+            "lead_phone": self.participant.identity if self.participant else "",
+            "first_name": self.first_name,
+            "required_state": self.dial_info.get("state"),
+            "source": "prospect_requested",
+            "requested_at_local": requested_time,
+            "reason": f"prospect asked to be called back: {requested_time}",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.post(CALLBACKS_URL, json=payload)
+                resp.raise_for_status()
+                cb_id = (resp.json() or {}).get("id")
+                logger.info(f"scheduled callback #{cb_id} for {self.first_name} ({requested_time})")
+                await _notify("callback_scheduled", {
+                    "call_id": self.call_id,
+                    "phone": payload["lead_phone"],
+                    "requested_time": requested_time,
+                    "callback_id": cb_id,
+                })
+                return f"callback scheduled ({requested_time})"
+        except Exception as e:
+            logger.error(f"schedule_callback failed: {e}")
             return f"error: {e}"
 
     @function_tool()
