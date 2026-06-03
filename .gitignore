@@ -25,3 +25,12 @@ voice-test/
 # Runtime call logs / transcripts (contains PII + health info)
 calls.db
 *.db
+# SQLite write-ahead-log / shared-memory temp files
+*.db-shm
+*.db-wal
+
+# Node deps (not used at runtime — pure-Python project; never commit this)
+node_modules/
+
+# Crash dumps
+*.stackdump
