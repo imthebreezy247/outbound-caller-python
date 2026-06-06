@@ -1,5 +1,5 @@
 """
-transfer_queue - the runtime that turns Emma's "transfer to a human" into
+transfer_queue - the runtime that turns Stephen's "transfer to a human" into
 a TaskRouter-routed warm transfer that finds the next Available agent.
 
 Exposes a FastAPI APIRouter that dashboard.py mounts under /api/transfer.
@@ -88,7 +88,7 @@ def _twilio_client():
 
 
 # ---------------------------------------------------------------------------
-# /prepare — called by Emma right before SIP REFER
+# /prepare — called by Stephen right before SIP REFER
 # ---------------------------------------------------------------------------
 
 @router.post("/prepare")
@@ -175,7 +175,7 @@ async def voice_webhook(
 ) -> PlainTextResponse:
     """
     Twilio voice webhook. `From` is the prospect's E.164; we look up the routing intent
-    that Emma prepared a moment ago, then return <Enqueue> TwiML.
+    that Stephen prepared a moment ago, then return <Enqueue> TwiML.
     """
     routing = agent_db.latest_routing_for_phone(From, within_seconds=120.0)
     if not routing:
@@ -412,7 +412,7 @@ async def list_callbacks(
 @router.post("/callbacks")
 async def add_callback(request: Request) -> JSONResponse:
     """
-    Add a callback row. Called by Emma's schedule_callback tool when the prospect
+    Add a callback row. Called by Stephen's schedule_callback tool when the prospect
     asks to be called back, or manually by managers.
 
     Required: lead_phone

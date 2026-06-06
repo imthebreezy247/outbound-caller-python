@@ -1,5 +1,5 @@
 """
-Emma dashboard - FastAPI + SSE live feed + call list + transcript viewer + Excel upload.
+Stephen dashboard - FastAPI + SSE live feed + call list + transcript viewer + Excel upload.
 
 Run:  uvicorn dashboard:app --host 0.0.0.0 --port 8080 --reload
 """
@@ -23,7 +23,7 @@ import agent_state
 from agent_state import router as agent_state_router
 from transfer_queue import router as transfer_router
 
-app = FastAPI(title="Emma Dashboard")
+app = FastAPI(title="Stephen Dashboard")
 app.include_router(transfer_router)
 app.include_router(agent_state_router)
 
@@ -100,7 +100,7 @@ async def upload(
     no_scrub: bool = Form(False),
     scrub_only: bool = Form(False),
 ):
-    suffix = Path(file.filename).suffix.lower()
+    suffix = Path(file.filename or "").suffix.lower()
     if suffix not in (".xlsx", ".xls", ".csv"):
         raise HTTPException(400, "upload .xlsx or .csv")
     tmp = Path(tempfile.mkstemp(suffix=suffix)[1])
@@ -156,7 +156,7 @@ def trigger_learn():
 
 
 _INDEX_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><title>Emma - Health Insurance Dialer</title>
+<html><head><meta charset="utf-8"><title>Stephen - Health Insurance Dialer</title>
 <style>
 :root{--bg:#0b0f1a;--panel:#141a2a;--panel2:#1a2238;--border:#22304f;--txt:#e5ecf5;--muted:#8492a6;--accent:#3dd6a5;--danger:#ff6b7a;--warn:#f5c56b;--info:#6bb6f5}
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Inter,sans-serif;background:var(--bg);color:var(--txt)}
@@ -207,7 +207,7 @@ h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)
 .hdr-meta{display:flex;gap:10px;padding:8px 12px;background:var(--panel);border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .hdr-meta b{color:var(--txt)}
 </style></head><body>
-<header><h1>Emma</h1><span class="badge">LIVE</span><span id="conn" style="color:var(--muted);font-size:12px">connecting…</span></header>
+<header><h1>Stephen</h1><span class="badge">LIVE</span><span id="conn" style="color:var(--muted);font-size:12px">connecting…</span></header>
 <div class="main">
   <div class="panel">
     <div class="upload">

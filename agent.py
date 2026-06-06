@@ -1,7 +1,7 @@
 """
-Emma - Outbound Health Insurance Lead Qualifier
+Stephen - Outbound Health Insurance Lead Qualifier
 =================================================
-Female AI agent that calls prospects from an Excel list, qualifies them for
+Male AI agent that calls prospects from an Excel list, qualifies them for
 health/dental insurance quotes, collects ZIP + DOB, and warm-transfers to Chris.
 
 Pipeline: Deepgram STT -> GPT-4o LLM -> OpenAI TTS (gpt-4o-mini-tts) + call-center ambience.
@@ -54,7 +54,7 @@ except ImportError:
 
 load_dotenv(dotenv_path=".env.local")
 
-logger = logging.getLogger("emma-agent")
+logger = logging.getLogger("stephen-agent")
 logger.setLevel(logging.DEBUG)
 # Ensure our logger actually writes to stderr (captured by call.sh -> agent.log)
 if not logger.handlers:
@@ -68,7 +68,7 @@ TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell (fallback when que
 TRANSFER_QUEUE_URL = os.getenv("TRANSFER_QUEUE_URL", "http://localhost:8080/api/transfer/prepare")
 CALLBACKS_URL = os.getenv("CALLBACKS_URL", "http://localhost:8080/api/transfer/callbacks")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")  # gpt-4o-mini default; gpt-4o as fallback
-DEEPGRAM_TTS_MODEL = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")  # young/warm female
+DEEPGRAM_TTS_MODEL = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-apollo-en")  # warm male (unused — live TTS is ElevenLabs)
 AMBIENCE_PATH = os.getenv("CALL_CENTER_AMBIENCE", "assets/call_center_bg.wav")
 LEARNINGS_FILE = Path("learnings.md")
 
@@ -163,8 +163,8 @@ def _spoken_year_to_digits(s: str) -> str:
     return " ".join(out)
 
 
-class Emma(Agent):
-    """Emma - the female lead qualifier."""
+class Stephen(Agent):
+    """Stephen - the male lead qualifier."""
 
     def __init__(self, *, first_name: str, known_zip: str | None, known_dob: str | None, dial_info: dict[str, Any]):
         self.first_name = first_name
@@ -190,8 +190,8 @@ class Emma(Agent):
         known_block = "\n".join(known_context)
 
         super().__init__(instructions=f"""
-You are Emma, a 24-year-old at a health insurance agency. Warm, casual, a little playful, but
-NEVER syrupy or scripted-sounding. You sound like a normal young woman talking on the phone -
+You are Stephen, a 24-year-old at a health insurance agency. Warm, casual, a little playful, but
+NEVER syrupy or scripted-sounding. You sound like a normal young guy talking on the phone -
 not a sales rep reading a pitch.
 
 Use fillers ("um", "like", "kinda", "honestly", "literally") the way real people do - SPARINGLY.
@@ -202,7 +202,7 @@ NEVER write onomatopoeic laughter or sounds like "haha", "hehe", "hmm", "ugh" - 
 loud and sound terrible. Use word choice for warmth instead.
 
 YOU ARE A HUMAN. Never say you are an AI, bot, or automated system. If asked, deflect warmly:
-"No silly, I'm Emma! I'm calling from our office in DC."
+"Nah, I'm Stephen! I'm calling from our office in DC."
 
 PROSPECT: {first_name}
 {known_block}
@@ -334,7 +334,7 @@ VOICEMAIL SIGNALS — only call `detected_answering_machine` if you hear an EXPL
   - "please record your message" / "at the sound of the tone"
 
 If you are NOT sure, assume it's a live person and proceed with the greeting. Better to say
-"hi this is Emma" to a voicemail than to hang up on a real prospect.
+"hi this is Stephen" to a voicemail than to hang up on a real prospect.
 
 NEVER leave a voicemail. We do not leave messages. Hang up only when you hear an explicit
 canned voicemail phrase from the list above.
@@ -677,7 +677,7 @@ async def entrypoint(ctx: JobContext) -> None:
     known_dob = dial_info.get("dob")
     call_id = dial_info.get("call_id", f"call_{int(time.time())}")
 
-    agent = Emma(
+    agent = Stephen(
         first_name=first_name,
         known_zip=known_zip,
         known_dob=known_dob,
@@ -703,7 +703,7 @@ async def entrypoint(ctx: JobContext) -> None:
             voice_id=os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9"),
             api_key=os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY"),
             # turbo_v2_5 has noticeably better voice quality than flash_v2_5 —
-            # flash made her sound flat/older. turbo is ~200ms slower but worth it.
+            # flash made him sound flat/older. turbo is ~200ms slower but worth it.
             model="eleven_turbo_v2_5",
             voice_settings=elevenlabs.VoiceSettings(
                 stability=0.25,         # lower = more expressive/youthful variation
@@ -714,7 +714,7 @@ async def entrypoint(ctx: JobContext) -> None:
             ),
         ),
         preemptive_generation=True,
-        # Interruption: 1 word for 500ms is enough to cut Emma off
+        # Interruption: 1 word for 500ms is enough to cut Stephen off
         min_interruption_duration=0.5,
         min_interruption_words=1,
         # Respond FAST: 150ms min delay after user finishes. This is the big latency knob.
@@ -820,7 +820,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # saying "hello?" and hear a natural pause (like a real person calling)
         await asyncio.sleep(2.5)
 
-        # Kick off Emma's opening — skip LLM round-trip for the greeting
+        # Kick off Stephen's opening — skip LLM round-trip for the greeting
         session.say(f"Hey {first_name}! How's it going today?", allow_interruptions=True)
 
         # Call-center background noise so it doesn't sound like dead-air AI.
@@ -861,7 +861,7 @@ async def entrypoint(ctx: JobContext) -> None:
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
-        agent_name="emma-health",
+        agent_name="stephen-health",
         # 1 idle process is plenty for solo testing - the default of 4 wastes
         # ~30s of cold-start importing torch/turn-detector four times.
         num_idle_processes=1,

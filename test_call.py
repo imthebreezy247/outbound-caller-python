@@ -1,5 +1,5 @@
 """
-Single-call test dialer. Calls YOUR number so you can pressure-test Emma
+Single-call test dialer. Calls YOUR number so you can pressure-test Stephen
 without waking up real leads at 10pm.
 
 Usage:
@@ -24,7 +24,7 @@ from livekit import api
 
 load_dotenv(dotenv_path=".env.local")
 
-AGENT_NAME = "emma-health"
+AGENT_NAME = "stephen-health"
 DEFAULT_TEST_NUMBER = "+19419497026"
 DEFAULT_TEST_NAME = "Chris"
 PRESET_NUMBERS = {
@@ -60,7 +60,7 @@ async def fire(phone: str, first_name: str, zip_code: str | None, dob: str | Non
         "call_id": call_id,
         "test_call": True,
     }
-    room = f"emma-test-{call_id}"
+    room = f"stephen-test-{call_id}"
     await lk.agent_dispatch.create_dispatch(
         api.CreateAgentDispatchRequest(
             agent_name=AGENT_NAME,
@@ -71,14 +71,14 @@ async def fire(phone: str, first_name: str, zip_code: str | None, dob: str | Non
     print(f"[OK] dispatched {call_id}")
     print(f"     -> calling {phone} as {first_name}")
     print(f"     -> room {room}")
-    print(f"     -> watch it live at http://localhost:8080")
+    print("     -> watch it live at http://localhost:8080")
     await lk.aclose()
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--to", help="phone number (any US format). Omit to fire the MAIN test call.")
-    ap.add_argument("--name", default=DEFAULT_TEST_NAME, help="first name Emma uses")
+    ap.add_argument("--name", default=DEFAULT_TEST_NAME, help="first name Stephen uses")
     ap.add_argument("--zip", dest="zip_code", default=None, help="pre-fill ZIP (skip asking)")
     ap.add_argument("--dob", default=None, help="pre-fill DOB (skip asking)")
     ap.add_argument("--pick", action="store_true", help="force interactive picker instead of main default")
