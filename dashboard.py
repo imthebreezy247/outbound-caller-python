@@ -6,14 +6,18 @@ Run:  uvicorn dashboard:app --host 0.0.0.0 --port 8080 --reload
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
+import os
+import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 
 import transcript_logger as tl
@@ -89,6 +93,70 @@ async def stream():
             _event_queues.discard(q)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+def _normalize_e164(raw: str) -> str | None:
+    """Minimal E.164 normalizer (kept inline so dashboard does not import pandas via dialer)."""
+    s = re.sub(r"\D", "", raw or "")
+    if len(s) == 10:
+        return "+1" + s
+    if len(s) == 11 and s.startswith("1"):
+        return "+" + s
+    return None
+
+
+_OPT_OUT_VALUES = {"opt_out", "opt-out", "optout", "do_not_call", "dnc"}
+
+
+@app.post("/api/retell/webhook")
+async def retell_webhook(request: Request) -> JSONResponse:
+    """
+    Retell AI webhook receiver. Configure in Retell: Webhook Settings ->
+    https://<public-host>/api/retell/webhook. On call_ended/call_analyzed,
+    scrubs opted-out leads into the internal DNC list.
+
+    Opt-out is detected from either:
+      - Post-Call Data Extraction boolean field `opt_out`
+      - collected dynamic variable interest_level == opt_out
+    """
+    raw = await request.body()
+
+    api_key = os.getenv("RETELL_API_KEY", "")
+    if api_key:
+        provided = request.headers.get("x-retell-signature", "")
+        expected = hmac.new(api_key.encode(), raw, hashlib.sha256).hexdigest()
+        if not provided or not hmac.compare_digest(provided, expected):
+            raise HTTPException(401, "invalid signature")
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "invalid JSON")
+
+    event = payload.get("event", "")
+    call = payload.get("call") or {}
+    if event not in ("call_ended", "call_analyzed"):
+        return JSONResponse({"ok": True, "ignored": event})
+
+    phone = _normalize_e164(call.get("to_number") or "")
+
+    analysis = call.get("call_analysis") or {}
+    custom = analysis.get("custom_analysis_data") or {}
+    collected = call.get("collected_dynamic_variables") or {}
+
+    opt_out = bool(custom.get("opt_out")) or (
+        str(collected.get("interest_level", "")).strip().lower() in _OPT_OUT_VALUES
+    )
+
+    if opt_out and phone:
+        scrubber.add_to_internal_dnc(phone, reason="retell_opt_out")
+        await agent_event(
+            "dnc_added",
+            {"phone": phone, "source": "retell", "call_id": call.get("call_id")},
+        )
+        return JSONResponse({"ok": True, "dnc_added": phone})
+
+    return JSONResponse({"ok": True, "dnc_added": None})
 
 
 @app.post("/api/upload")
