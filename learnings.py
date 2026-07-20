@@ -1,7 +1,7 @@
 """
 Nightly learning job: reads recent call transcripts, asks GPT to extract patterns
 that worked (led to transfer) vs flopped (led to rejection), writes learnings.md.
-This file is injected into Stephen's system prompt on the next worker restart.
+This file is injected into Mike's system prompt on the next worker restart.
 
 Run manually:  python learnings.py
 Run nightly:   0 3 * * *  cd /path && python learnings.py
@@ -52,11 +52,11 @@ def build_learnings() -> str:
         return ""
 
     prompt = textwrap.dedent(f"""
-    You are a sales coach analyzing outbound health-insurance cold calls by an agent named Stephen.
+    You are a sales coach analyzing outbound health-insurance cold calls by an agent named Mike.
     Goal: transfer prospects to a licensed agent (Chris) after collecting ZIP and DOB.
 
     Below are {len(won)} TRANSFERRED calls (wins) and {len(lost)} REJECTED calls (losses).
-    Extract 5-10 concrete, actionable lessons Stephen should apply on future calls. Focus on:
+    Extract 5-10 concrete, actionable lessons Mike should apply on future calls. Focus on:
     - Opening moves that worked vs backfired
     - Rebuttals that got past the first objection
     - Tone/word choices correlated with success

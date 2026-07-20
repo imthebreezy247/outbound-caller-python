@@ -8,10 +8,10 @@ cd "$(dirname "$0")"
 NUMBER="${1:-9415180701}"
 NAME="${2:-Chris}"
 
-AGENT_LOG=/tmp/stephen-agent.log
-DASH_LOG=/tmp/stephen-dashboard.log
-AGENT_PID=/tmp/stephen-agent.pid
-DASH_PID=/tmp/stephen-dashboard.pid
+AGENT_LOG=/tmp/mike-agent.log
+DASH_LOG=/tmp/mike-dashboard.log
+AGENT_PID=/tmp/mike-agent.pid
+DASH_PID=/tmp/mike-dashboard.pid
 
 if [ -f venv-wsl/bin/activate ]; then
   source venv-wsl/bin/activate

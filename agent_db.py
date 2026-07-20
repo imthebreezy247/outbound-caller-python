@@ -71,7 +71,7 @@ def _init() -> None:
 
         CREATE TABLE IF NOT EXISTS routing_log (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          call_id TEXT,                           -- Stephen's internal call_id, joins to calls.id
+          call_id TEXT,                           -- Mike's internal call_id, joins to calls.id
           task_sid TEXT UNIQUE,                   -- TaskRouter Task SID (WT...)
           lead_phone TEXT NOT NULL,               -- E.164, used to look up routing intent at the Twilio voice webhook
           first_name TEXT,
@@ -294,7 +294,7 @@ def prepare_routing(
     prefer_agent_sid: str | None = None,
 ) -> int:
     """
-    Called by the AI agent (Stephen) right before SIP-REFERring the call to the
+    Called by the AI agent (Mike) right before SIP-REFERring the call to the
     queue number. Stores routing intent so the Twilio voice webhook can look
     it up by lead_phone when the bridged call arrives.
     """
@@ -406,7 +406,7 @@ def add_pending_callback(
     """
     Schedule a callback. Sources:
       'no_agent_timeout'   - queue exhausted with no agent available
-      'prospect_requested' - prospect asked Stephen to be called back
+      'prospect_requested' - prospect asked Mike to be called back
       'manual'             - manager queued from /agents
     """
     with _LOCK, sqlite3.connect(DB_PATH) as c:

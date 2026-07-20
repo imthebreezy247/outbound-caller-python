@@ -34,7 +34,7 @@ from livekit import api
 
 load_dotenv(dotenv_path=".env.local")
 
-AGENT_NAME = "stephen-health"
+AGENT_NAME = "mike-health"
 
 COLUMN_ALIASES = {
     "first_name": {"first_name", "firstname", "fname", "name", "first"},
@@ -135,7 +135,7 @@ def load_contacts(path: Path) -> list[dict]:
 async def dispatch_call(lk: api.LiveKitAPI, contact: dict) -> str:
     call_id = f"call_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     metadata = {**contact, "call_id": call_id}
-    room_name = f"stephen-{call_id}"
+    room_name = f"mike-{call_id}"
     await lk.agent_dispatch.create_dispatch(
         api.CreateAgentDispatchRequest(
             agent_name=AGENT_NAME,
