@@ -26,6 +26,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 from dotenv import load_dotenv
 from livekit import api, rtc
 from livekit.agents import (
@@ -63,7 +64,9 @@ if not logger.handlers:
     logger.propagate = False
 
 OUTBOUND_TRUNK_ID = os.getenv("SIP_OUTBOUND_TRUNK_ID")
-TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell
+TRANSFER_TO = os.getenv("TRANSFER_TO_NUMBER")  # Chris's cell (fallback when queue not configured)
+TRANSFER_QUEUE_URL = os.getenv("TRANSFER_QUEUE_URL", "http://localhost:8080/api/transfer/prepare")
+CALLBACKS_URL = os.getenv("CALLBACKS_URL", "http://localhost:8080/api/transfer/callbacks")
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5")  # claude-haiku-4-5 default (4.5x faster TTFT than 4o-mini, better tool reliability)
 
 
@@ -108,7 +111,7 @@ def _build_tts(engine: str):
         sage, alloy, echo, fable, onyx.
 
     Deepgram:
-        Lowest latency, decent quality. Set DEEPGRAM_TTS_MODEL (default: aura-2-thalia-en).
+        Lowest latency, decent quality. Set DEEPGRAM_TTS_MODEL (default: aura-2-apollo-en).
     """
     engine = engine.lower().strip()
 
@@ -132,7 +135,7 @@ def _build_tts(engine: str):
         )
 
     if engine == "deepgram":
-        model = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")
+        model = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-apollo-en")
         logger.info(f"TTS engine: Deepgram model={model}")
         return deepgram.TTS(model=model)
 
@@ -567,23 +570,74 @@ If you get cut off mid-sentence:
         await _notify("dob_captured", {"call_id": self.call_id, "dob": s})
         return f"dob {s} saved (age {age})"
 
+    async def _resolve_transfer_target(self, temperature: str = "warm") -> str | None:
+        """
+        Call the queue prepare endpoint to stash routing intent (including
+        temperature for priority routing) and learn which Twilio number to REFER
+        to. Falls back to TRANSFER_TO_NUMBER (Chris's cell) if the queue isn't
+        reachable — preserves pre-TaskRouter behaviour so local dev still works
+        without a workspace provisioned.
+        """
+        if not self.participant:
+            return None
+        payload = {
+            "call_id": self.call_id,
+            "lead_phone": self.participant.identity,
+            "first_name": self.first_name,
+            "required_state": self.dial_info.get("state"),
+            "temperature": temperature,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.post(TRANSFER_QUEUE_URL, json=payload)
+                resp.raise_for_status()
+                queue_number = (resp.json() or {}).get("queue_number")
+                if queue_number:
+                    logger.info(f"queue prepare ok ({temperature}); will REFER to {queue_number}")
+                    return queue_number
+                logger.warning("queue prepare returned no queue_number; falling back to TRANSFER_TO")
+        except Exception as e:
+            logger.warning(f"queue prepare failed ({e}); falling back to TRANSFER_TO")
+        return TRANSFER_TO
+
     @function_tool()
-    async def transfer_call(self, ctx: RunContext) -> str:
-        """Warm-transfer the live call to Chris's cell via SIP REFER."""
+    async def transfer_call(self, ctx: RunContext, temperature: str = "warm") -> str:
+        """Warm-transfer the live call to an available human agent via the TaskRouter queue.
+
+        Set `temperature` based on conversation signals:
+          - "hot": prospect is highly interested, asked about pricing, ready to enroll,
+            or said something like "I want to do this now". Jumps the queue. Use sparingly.
+          - "warm" (default): qualified prospect who agreed to a call with the specialist.
+            The normal path after STEP 6.
+          - "compliance": prospect raised a TCPA/DNC concern, asked for a manager,
+            mentioned suing/lawyer, or otherwise needs supervisor attention. Routes
+            to a manager rather than a regular agent.
+
+        Do NOT pick "hot" just because the prospect was friendly — only when they
+        explicitly indicate urgency or readiness-to-buy.
+        """
         if self.transfer_initiated:
             return "already transferring"
-        if not TRANSFER_TO:
-            return "no transfer number configured"
         if not self.participant:
             return "no participant"
 
+        # Defensive normalization in case the LLM hallucinates a value.
+        temp = (temperature or "warm").lower()
+        if temp not in ("hot", "warm", "compliance"):
+            temp = "warm"
+
+        transfer_target = await self._resolve_transfer_target(temperature=temp)
+        if not transfer_target:
+            return "no transfer number configured"
+
         self.transfer_initiated = True
         self.outcome = "transferred"
-        logger.info(f"transferring {self.participant.identity} -> {TRANSFER_TO}")
+        logger.info(f"transferring {self.participant.identity} -> {transfer_target} (temp={temp})")
         await _notify("call_transferring", {
             "call_id": self.call_id,
             "phone": self.participant.identity,
-            "transfer_to": TRANSFER_TO,
+            "transfer_to": transfer_target,
+            "temperature": temp,
         })
 
         job_ctx = get_job_context()
@@ -592,7 +646,7 @@ If you get cut off mid-sentence:
                 api.TransferSIPParticipantRequest(
                     room_name=job_ctx.room.name,
                     participant_identity=self.participant.identity,
-                    transfer_to=f"tel:{TRANSFER_TO}",
+                    transfer_to=f"tel:{transfer_target}",
                     play_dialtone=True,
                 )
             )
@@ -606,6 +660,50 @@ If you get cut off mid-sentence:
             )
             await asyncio.sleep(3)
             await self._hangup()
+            return f"error: {e}"
+
+    @function_tool()
+    async def schedule_callback(
+        self,
+        ctx: RunContext,
+        requested_time: str = "ASAP",
+    ) -> str:
+        """Record a callback the prospect requested. Use this when the prospect says
+        something like "can you call me back later", "now's not a good time, try
+        tomorrow", or "I want to talk but I'm driving — call me in an hour".
+
+        Args:
+            requested_time: the prospect's own words for when to call back, e.g.
+                "tomorrow at 3pm", "after 5", "in an hour". Pass "ASAP" when they
+                don't specify. We don't parse this; it's logged verbatim so the
+                dispatcher can read it.
+
+        After calling this tool, warmly confirm: "Got it, {first_name}, we'll
+        give you a call back {requested_time}. Talk soon!" then call end_call.
+        """
+        payload = {
+            "lead_phone": self.participant.identity if self.participant else "",
+            "first_name": self.first_name,
+            "required_state": self.dial_info.get("state"),
+            "source": "prospect_requested",
+            "requested_at_local": requested_time,
+            "reason": f"prospect asked to be called back: {requested_time}",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.post(CALLBACKS_URL, json=payload)
+                resp.raise_for_status()
+                cb_id = (resp.json() or {}).get("id")
+                logger.info(f"scheduled callback #{cb_id} for {self.first_name} ({requested_time})")
+                await _notify("callback_scheduled", {
+                    "call_id": self.call_id,
+                    "phone": payload["lead_phone"],
+                    "requested_time": requested_time,
+                    "callback_id": cb_id,
+                })
+                return f"callback scheduled ({requested_time})"
+        except Exception as e:
+            logger.error(f"schedule_callback failed: {e}")
             return f"error: {e}"
 
     @function_tool()
@@ -708,9 +806,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         turn_detection=EnglishModel(),
-        # VAD: balanced threshold — 0.6 catches real speech, ignores background noise
-        # but not so high it misses quiet speakers. 150ms silence = faster turn release.
-        vad=silero.VAD.load(min_silence_duration=0.15, activation_threshold=0.6),
+        # VAD: higher threshold (0.7) so faint phone-line echo / background noise
+        # doesn't register as the prospect speaking. 200ms silence before end-of-turn.
+        vad=silero.VAD.load(min_silence_duration=0.2, activation_threshold=0.7),
         stt=deepgram.STT(
             model="nova-3",
             language="en-US",
@@ -723,15 +821,17 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=_build_llm(LLM_MODEL),
         tts=_build_tts(TTS_ENGINE),
         preemptive_generation=True,
-        # Interruption: 1 word for 500ms is enough to cut Mike off
-        min_interruption_duration=0.5,
-        min_interruption_words=1,
+        # Interruption: require 3 sustained words (0.8s) before Mike yields. This is
+        # the key fix — at 1 word / 0.5s, his own echoed voice and background noise on
+        # the phone line were cutting him off mid-pitch, then he'd pause and restart.
+        min_interruption_duration=0.8,
+        min_interruption_words=3,
         # Respond FAST: 150ms min delay after user finishes. This is the big latency knob.
         min_endpointing_delay=0.15,
-        # Max 1s wait if turn detector is unsure user is done (was 2s — too slow)
-        max_endpointing_delay=1.0,
-        # Resume quickly after false interruption
-        false_interruption_timeout=0.8,
+        # Max 0.6s wait if the turn detector is unsure the user is done — snappier replies.
+        max_endpointing_delay=0.6,
+        # If a false interruption slips through, resume quickly instead of dead-air.
+        false_interruption_timeout=0.5,
     )
 
     # Hook agent transcript -> log assistant speech too
@@ -825,9 +925,9 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info(f"participant joined: {participant.identity}")
         agent.set_participant(participant)
 
-        # Wait 2.5s after pickup before speaking — gives the prospect time to finish
-        # saying "hello?" and hear a natural pause (like a real person calling)
-        await asyncio.sleep(2.5)
+        # Brief pause after pickup before speaking — feels natural without dead air.
+        # (was 2.5s — too slow to get into the opening.)
+        await asyncio.sleep(1.2)
 
         # Kick off Mike's opening — skip LLM round-trip for the greeting
         session.say(f"Hey {first_name}, how you doing?", allow_interruptions=True)
