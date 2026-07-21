@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(git cherry origin/master master)"
+      "PowerShell(git cherry origin/master master)",
+      "PowerShell(git rebase origin/master)",
+      "PowerShell(git log -1 --format='%ci %s' c4105d3; git log -1 --format='%ci %s' 10cf549; git log -1 --format='%ci %s' 85d3f8a; git log -1 --format='%ci %s' 0374560; \\(Select-String -Path agent.py -Pattern '^<{7}'\\).Count; \\(Select-String -Path test_call.py -Pattern '^<{7}'\\).Count)",
+      "Bash(echo \"remaining: $?\")",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
