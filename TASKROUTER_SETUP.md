@@ -1,12 +1,12 @@
 # TaskRouter setup — agent queueing
 
-Wires Stephen's warm transfer to a Twilio TaskRouter queue that routes the live call
+Wires Mike's warm transfer to a Twilio TaskRouter queue that routes the live call
 to the next Available human agent based on state license and priority.
 
 End-to-end flow once provisioned:
 
 ```
-Stephen decides to transfer
+Mike decides to transfer
    → POST /api/transfer/prepare        (stashes routing intent)
    → SIP REFER to <queue number>       (LiveKit asks Twilio to bridge there)
 Twilio voice webhook on queue number
@@ -26,7 +26,7 @@ Call ends → worker auto-set to Wrap-Up → auto-flipped to Available after 30s
 You need:
 - A Twilio account with TaskRouter enabled (it's on by default for new accounts).
 - A Twilio phone number that will host the queue. **It does not have to be the
-  same number Stephen dials from.** It can be the same; up to you.
+  same number Mike dials from.** It can be the same; up to you.
 - Your Twilio `ACCOUNT_SID` and `AUTH_TOKEN` in `.env.local`
   (already scaffolded under `# ============ Twilio (for trunk setup ...`).
 
@@ -157,7 +157,7 @@ uvicorn dashboard:app --host 0.0.0.0 --port 8080 --reload
 # 3. Open the agent page, click Available.
 #    http://localhost:8080/agent/1
 
-# 4. Simulate Stephen's prepare call:
+# 4. Simulate Mike's prepare call:
 curl -X POST http://localhost:8080/api/transfer/prepare \
      -H 'content-type: application/json' \
      -d '{"call_id":"test_001","lead_phone":"+15555550100","first_name":"Pat","required_state":"TX","temperature":"warm"}'
@@ -175,11 +175,11 @@ sqlite3 calls.db "SELECT * FROM routing_log ORDER BY id DESC LIMIT 1;"
 
 ## Priority lanes (Phase 2)
 
-Every transfer carries a `temperature` set by Stephen at the moment he calls his
+Every transfer carries a `temperature` set by Mike at the moment he calls his
 `transfer_call` tool. The temperature drives both the queue priority and which
 filter the workflow uses to find an agent.
 
-| temperature  | priority | who picks it up                                            | when Stephen uses it                                                                |
+| temperature  | priority | who picks it up                                            | when Mike uses it                                                                |
 |--------------|---------:|------------------------------------------------------------|----------------------------------------------------------------------------------|
 | `compliance` |    12    | **manager queue only** (`is_manager == true`)              | TCPA/DNC concern, "let me speak to your supervisor", lawyer threats              |
 | `hot`        |    10    | state-matched agent first (45s); falls back to any agent   | prospect ready to enroll, asked for pricing, said "I want this now"              |
@@ -191,9 +191,9 @@ When you edit them, re-run `python taskrouter_setup.py init` to push the new
 workflow JSON to Twilio. The init command is idempotent — it updates the existing
 workflow rather than creating duplicates.
 
-### How Stephen picks the temperature
+### How Mike picks the temperature
 
-Stephen reads the docstring on his `transfer_call` tool and chooses. The
+Mike reads the docstring on his `transfer_call` tool and chooses. The
 docstring lives at [agent.py — `transfer_call`](agent.py) and explicitly
 warns the LLM not to mark a friendly prospect as `hot` — only explicit
 urgency / readiness-to-buy qualifies.
@@ -237,10 +237,10 @@ When a warm transfer lands in the queue and no agent picks up within
 
 ### B. Prospect-requested callback
 
-Stephen has a new tool, `schedule_callback(requested_time)`, that he calls
+Mike has a new tool, `schedule_callback(requested_time)`, that he calls
 when the prospect says something like "now's not a good time, try
 tomorrow". The tool POSTs to `/api/transfer/callbacks` with
-`source='prospect_requested'`. After the tool call Stephen confirms the
+`source='prospect_requested'`. After the tool call Mike confirms the
 callback verbally and ends the call.
 
 ### C. Sticky routing
@@ -304,7 +304,7 @@ Drop that as a small script (`callback_runner.py`) and run it alongside
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/transfer/callbacks` | GET | List by status (`pending`, `dispatched`, `completed`, `gave_up`, `all`) |
-| `/api/transfer/callbacks` | POST | Add one (used by Stephen's tool) |
+| `/api/transfer/callbacks` | POST | Add one (used by Mike's tool) |
 | `/api/transfer/callbacks/claim` | POST | Atomically claim due-now rows for a batch dispatch |
 | `/api/transfer/callbacks/{id}/completed` | PUT | Mark success |
 | `/api/transfer/callbacks/{id}/gave_up` | PUT | Mark failure |

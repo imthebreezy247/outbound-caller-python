@@ -1,4 +1,4 @@
-# Stephen - Outbound Health Insurance Agent
+# Mike - Outbound Health Insurance Agent
 
 ## 🛠️ ONE-TIME SETUP (WSL)
 
@@ -61,10 +61,10 @@ The script activates the venv, starts the agent + dashboard if not already runni
 After `./call.sh` returns, open a **second WSL terminal** and run:
 
 ```bash
-tail -f /tmp/stephen-agent.log
+tail -f /tmp/mike-agent.log
 ```
 
-You'll see every transcript line, Stephen's replies, tool calls, and errors stream in real time. Keep this open for the entire call.
+You'll see every transcript line, Mike's replies, tool calls, and errors stream in real time. Keep this open for the entire call.
 
 Optional browser view: <http://localhost:8080> — same data with ZIP/DOB capture and call history.
 
@@ -81,9 +81,9 @@ Or just close the WSL window — the processes die with it.
 
 ---
 
-## 🎤 CHANGING STEPHEN'S VOICE
+## 🎤 CHANGING MIKE'S VOICE
 
-Current setup: **ElevenLabs Stephen** (young male voice, ID `6YQMyaUWlj0VX652cY1C`).
+Current setup: **ElevenLabs Mike** (young male voice, ID `6YQMyaUWlj0VX652cY1C`).
 
 To swap voices:
 
@@ -100,16 +100,16 @@ To swap voices:
    ```bash
    pkill -f "python3 agent.py"
    ./call.sh 9415180701
-   tail -f /tmp/stephen-agent.log    # always the last step
+   tail -f /tmp/mike-agent.log    # always the last step
    ```
 
 **IMPORTANT:** You want the **Voice Library**, NOT ElevenLabs "Agents." The Agents product is a competing all-in-one product we don't use. Just browse voices and grab IDs.
 
 ---
 
-## 📝 CHANGING WHAT STEPHEN SAYS
+## 📝 CHANGING WHAT MIKE SAYS
 
-His full script is in [agent.py](agent.py) — the big multiline `instructions=f"""..."""` block inside `Stephen.__init__`. Edit that text, restart the agent, done.
+His full script is in [agent.py](agent.py) — the big multiline `instructions=f"""..."""` block inside `Mike.__init__`. Edit that text, restart the agent, done.
 
 ---
 
@@ -117,13 +117,13 @@ His full script is in [agent.py](agent.py) — the big multiline `instructions=f
 
 ### Phone doesn't ring after dispatch
 
-- Check `/tmp/stephen-agent.log` for errors
+- Check `/tmp/mike-agent.log` for errors
 - Verify `SIP_OUTBOUND_TRUNK_ID` in `.env.local` is correct
 - Make sure the number is US 10-digit format
 
 ### Dashboard won't load at localhost:8080
 
-- Check `/tmp/stephen-dashboard.log` for startup errors
+- Check `/tmp/mike-dashboard.log` for startup errors
 - Make sure nothing else is on port 8080 (`lsof -i :8080`)
 
 ### "registered worker" never appears
@@ -131,7 +131,7 @@ His full script is in [agent.py](agent.py) — the big multiline `instructions=f
 - `.env.local` missing credentials — check LiveKit keys
 - Network/firewall blocking websocket connection to LiveKit Cloud
 
-### Stephen sounds robotic
+### Mike sounds robotic
 
 - You're probably still on Deepgram TTS
 - Swap to ElevenLabs: set `ELEVENLABS_API_KEY` in `.env.local` (see above section)
@@ -144,7 +144,7 @@ His full script is in [agent.py](agent.py) — the big multiline `instructions=f
 | File                                             | Purpose                              |
 | ------------------------------------------------ | ------------------------------------ |
 | [call.sh](call.sh)                               | One-command launcher                 |
-| [agent.py](agent.py)                             | Stephen's brain + prompt             |
+| [agent.py](agent.py)                             | Mike's brain + prompt             |
 | [dashboard.py](dashboard.py)                     | Browser UI at localhost:8080         |
 | [test_call.py](test_call.py)                     | Dispatches calls to the agent        |
 | [.env.local](.env.local)                         | Your API keys + config               |

@@ -1,6 +1,6 @@
-# Stephen - Health Insurance Outbound Dialer
+# Mike - Health Insurance Outbound Dialer
 
-Male AI agent (Stephen) calls leads from an Excel list, qualifies interest, collects
+Male AI agent (Mike) calls leads from an Excel list, qualifies interest, collects
 ZIP + DOB, and warm-transfers the live call to Chris's cell. Every call is transcribed
 to SQLite, shown on a live dashboard, and fed back into a nightly learning job that
 tunes the prompt automatically.
@@ -10,7 +10,7 @@ tunes the prompt automatically.
 ```
 Excel -> dialer.py -> LiveKit agent dispatch -> Twilio SIP trunk -> Prospect phone
                                     |
-                        Stephen (agent.py, worker process)
+                        Mike (agent.py, worker process)
                         Deepgram STT -> GPT-4o-mini -> ElevenLabs TTS (+ ambience mix)
                                     |
                         TranscriptLogger (SQLite: calls.db)
@@ -53,7 +53,7 @@ python dialer.py leads.xlsx --concurrent 2
 - Sheet: `Sheet1` (auto-selected; "Claude Log" sheet ignored)
 - Rows: 95,937 → **95,864 valid contacts** after phone normalization (73 rejected for invalid phone format)
 - Top states: TX (19.4k), FL (13.3k), GA (6.4k), IL (5.5k), NC (4.7k)
-- DOB present on 18,321 rows (Stephen skips asking when available)
+- DOB present on 18,321 rows (Mike skips asking when available)
 - **1,335 duplicate phone numbers** still present despite the scrub — add `--dedupe` if you want to drop them (or run a second pass through the same process that produced this file)
 - **Scrub against the National DNC Registry** before dialing. 95k TCPA-unscrubbed dials is a ~$500/violation exposure.
 
@@ -67,10 +67,10 @@ python dialer.py alfano-chris-list-needs-scrub-04-13-26.xlsx --limit 25 --concur
 
 | column       | required | notes                                    |
 |--------------|----------|------------------------------------------|
-| first_name   | yes      | Stephen uses this in the opening line       |
+| first_name   | yes      | Mike uses this in the opening line       |
 | phone        | yes      | Any format, auto-normalized to E.164 US  |
-| zip          | no       | If present, Stephen skips asking            |
-| dob          | no       | If present, Stephen skips asking            |
+| zip          | no       | If present, Mike skips asking            |
+| dob          | no       | If present, Mike skips asking            |
 | email        | no       | Logged to dashboard                      |
 | state        | no       | Metadata only                            |
 
@@ -88,7 +88,7 @@ You asked if you can use your own cell phone. Yes - not as the caller ID, but as
 transfer destination. Flow:
 
 - Outbound caller ID = your DC Twilio number (always)
-- When Stephen calls `transfer_call`, LiveKit issues a SIP REFER to Twilio
+- When Mike calls `transfer_call`, LiveKit issues a SIP REFER to Twilio
 - Twilio bridges the in-progress call to `TRANSFER_TO_NUMBER` (your cell)
 - The prospect's phone stays on the same call; you pick up on your cell
 - Your cell number is never exposed to the prospect
@@ -102,7 +102,7 @@ python learnings.py
 ```
 
 Reads the last 20 transferred + 20 rejected calls, asks GPT-4o to extract concrete
-lessons, and writes `learnings.md`. That file is injected into Stephen's system prompt
+lessons, and writes `learnings.md`. That file is injected into Mike's system prompt
 on the next worker restart. Kill and restart `agent.py dev` after each training pass.
 
 Cron example: `0 3 * * * cd /path/to/project && python learnings.py && pkill -f "agent.py dev" && nohup python agent.py dev > agent.log 2>&1 &`
@@ -115,11 +115,11 @@ Cron example: `0 3 * * * cd /path/to/project && python learnings.py && pkill -f 
 - Upload Excel directly from UI to kick off a batch
 - "Train on Past Calls" button runs learnings.py on demand
 
-## Tuning Stephen's voice
+## Tuning Mike's voice
 
 In `.env.local`:
 
-- `ELEVENLABS_VOICE_ID` - the ElevenLabs voice. Current: `6YQMyaUWlj0VX652cY1C` (Stephen, young male). Browse/swap at <https://elevenlabs.io/app/voice-library>.
+- `ELEVENLABS_VOICE_ID` - the ElevenLabs voice. Current: `6YQMyaUWlj0VX652cY1C` (Mike, young male). Browse/swap at <https://elevenlabs.io/app/voice-library>.
 - `AMBIENCE_GAIN` - 0.08 (subtle) to 0.20 (clearly audible). Default 0.12.
 
 If you want richer breathing/emotion, swap in ElevenLabs later:
@@ -136,11 +136,11 @@ tts=elevenlabs.TTS(voice_id="EXAVITQu4vr4xnSDxMaL", model="eleven_turbo_v2_5",
 - TCPA: don't dial numbers without prior consent; scrub against the DNC registry.
 - Two-party recording: transcripts are stored. Disclose at call start if required by
   prospect's state (CA, FL, etc.). Add to opening line if needed.
-- Stephen currently claims to be human when asked. If you need disclosure add to the
+- Mike currently claims to be human when asked. If you need disclosure add to the
   `instructions` block in `agent.py`.
 
 ## If this fails, check:
 
 1. **`SIP 403/404` on outbound dial** - your Twilio trunk auth / outbound IP whitelist. Run `python fix_twilio_trunk.py`.
-2. **Stephen silent after pickup** - check worker logs for ElevenLabs TTS errors; verify `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` are set.
+2. **Mike silent after pickup** - check worker logs for ElevenLabs TTS errors; verify `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` are set.
 3. **Transfer fails silently** - `TRANSFER_TO_NUMBER` not in E.164 (+1... format) or Twilio trunk doesn't allow outbound to that number.

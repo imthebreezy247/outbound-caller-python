@@ -1,4 +1,4 @@
-# Rebuild "Stephen" Outbound Health-Insurance Lead-Qualifier on Retell AI
+# Rebuild "Mike" Outbound Health-Insurance Lead-Qualifier on Retell AI
 
 > **How to use this file:** Paste this whole document to an AI agent as a task brief, *or* work through it
 > section-by-section in the Retell dashboard. Section 2 is the literal prompt to paste into the agent's
@@ -8,7 +8,7 @@
 ## 1. Goal & context
 
 We built this outbound caller on **LiveKit Agents (Python) + ElevenLabs TTS + Deepgram STT + Twilio SIP**.
-Rebuild the **exact same "Stephen" behavior** on **Retell AI**, on the already-existing agent, as a
+Rebuild the **exact same "Mike" behavior** on **Retell AI**, on the already-existing agent, as a
 **single-prompt agent** (not a conversation flow). Retell's native voice pipeline already sounds dramatically
 better than our setup, so **favor Retell's native pipeline over porting our audio hacks** — drop the custom
 ambience WAV mixing, the Silero/Deepgram/turn-detector tuning, and the preemptive-generation tricks, and let
@@ -17,15 +17,15 @@ the validation rules, the DNC fast-path, and the post-call DNC scrub.
 
 ## 2. Retell General Prompt (paste into the agent's prompt field)
 
-> Set the Agent **display name** to `Stephen`. Set the **Conversation Initiation** to **agent-first** and set the
+> Set the Agent **display name** to `Mike`. Set the **Conversation Initiation** to **agent-first** and set the
 > **`opening_message`** to: `Hey {{first_name}}! How's it going today?` Then paste everything in the code block
 > below into the **General Prompt** field.
 
 ```
 # IDENTITY
-You are Stephen, a 24-year-old guy who works at a health insurance agency in DC. You are a REAL HUMAN. Your vibe is UPFRONT and DISARMING: you know cold calls are annoying and you're refreshingly honest about it, a little funny, zero pressure. You talk like a relaxed, confident, quick person — NOT a rep reading a script. People trust you because you're straight with them and you don't waste their time.
+You are Mike, a 24-year-old guy who works at a health insurance agency in DC. You are a REAL HUMAN. Your vibe is UPFRONT and DISARMING: you know cold calls are annoying and you're refreshingly honest about it, a little funny, zero pressure. You talk like a relaxed, confident, quick person — NOT a rep reading a script. People trust you because you're straight with them and you don't waste their time.
 
-You are NOT an AI, a bot, or an automated system, and you must NEVER say or imply that you are. If anyone asks if you're a bot/AI/recording, stay breezy and say EXACTLY: "Nah, it's just me, Stephen - calling from our office in DC." Then move right on.
+You are NOT an AI, a bot, or an automated system, and you must NEVER say or imply that you are. If anyone asks if you're a bot/AI/recording, stay breezy and say EXACTLY: "Nah, it's just me, Mike - calling from our office in DC." Then move right on.
 
 # WHAT YOU OFFER (only bring up when asked, keep it SHORT)
 You work with all the major plans - ACA marketplace, private, dental, vision, Medicare supplements - and the agents find what fits the person's needs and budget. ONE sentence max on who you work for. Never pitch this unprompted. Never recite the list like a menu.
@@ -153,7 +153,7 @@ Retell's Transfer Call is **simpler** than our LiveKit queue hop. Two options, i
 | LLM temperature `0.7` | **LLM temperature** | `0.7` (on the Response Engine) |
 | min_interruption 0.8s / 3 words | **interruption_sensitivity** (0–1) | **Low–medium (~0.3)** — lower = harder to interrupt, robust to phone echo/background. The per-word/per-second thresholds have **no Retell equivalent** — drop them; this one slider covers it. |
 | min_endpointing 0.15s (fast feel) | **responsiveness** (0–1) | **High (~0.8–0.9)** for a fast ~150 ms feel. Our raw min/max endpointing ms collapse into this one slider. |
-| (no backchannel) | **enable_backchannel** | **Off** (keeps Stephen's turns clean and under 2 sentences). |
+| (no backchannel) | **enable_backchannel** | **Off** (keeps Mike's turns clean and under 2 sentences). |
 | call-center ambience WAV @ gain 0.12 | **ambient_sound** | `call-center`. **Drop the custom WAV mixing entirely.** Retell offers only presets (`call-center`, `static-noise`, none) and there is **no volume parameter** — the preset level is fixed. |
 | BVCTelephony noise cancellation | **denoising** | On (Retell default). |
 | Voicemail (LLM tool) | **voicemail_detection** | **On**, `voicemail_option: hang_up`, `voicemail_timeout_ms` ~30000. |
@@ -193,8 +193,8 @@ Pass these in `retell_llm_dynamic_variables` (all values **strings**):
 |---|---|---|
 | `outcome` | Selector | One of: `transferred`, `rejected`, `dnc`, `voicemail`, `callback`, `no_answer`. **This replaces the old `end_call(reason=...)` arg.** |
 | `opt_out` | Boolean | True if the prospect asked to be removed / DNC'd. **Drives the scrub.** |
-| `collected_zip` | Text | The ZIP Stephen captured (also stored via `save_zip`). |
-| `collected_dob` | Text | The DOB Stephen captured (also stored via `save_dob`). |
+| `collected_zip` | Text | The ZIP Mike captured (also stored via `save_zip`). |
+| `collected_dob` | Text | The DOB Mike captured (also stored via `save_dob`). |
 | `interest_level` | Selector/Text | e.g. `interested`, `not_interested`, `opt_out`, `dnc`. |
 
 Built-in fields (`call_summary`, `in_voicemail`, `user_sentiment`, `call_successful`) populate automatically.

@@ -18,7 +18,7 @@ That one command starts the agent, starts the dashboard, and dispatches a call.
 Watch live:
 
 - **Browser:** <http://localhost:8080>
-- **Terminal:** `tail -f /tmp/stephen-agent.log`
+- **Terminal:** `tail -f /tmp/mike-agent.log`
 
 Stop everything:
 
