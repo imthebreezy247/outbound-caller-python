@@ -84,7 +84,10 @@
       "Bash(wait %1)",
       "Read(//tmp/**)",
       "Bash(wsl -d Ubuntu -- bash -c 'ls -la /tmp/emma-agent.log 2>/dev/null && echo \"---LOG TAIL---\" && tail -100 /tmp/emma-agent.log 2>/dev/null')",
-      "Bash(wsl -d Ubuntu -- bash -c 'cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python -c \" *)"
+      "Bash(wsl -d Ubuntu -- bash -c 'cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python -c \" *)",
+      "Bash(git -C \"d:/Coding-projects/outbound-caller-python-main\" log --oneline -5)",
+      "Bash(git -C \"d:/Coding-projects/outbound-caller-python-main\" status --short)",
+      "Bash(git check-ignore *)"
     ],
     "deny": [],
     "ask": [],
