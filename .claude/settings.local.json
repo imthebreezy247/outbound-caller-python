@@ -87,7 +87,12 @@
       "Bash(wsl -d Ubuntu -- bash -c 'cd /mnt/d/Coding-projects/outbound-caller-python-main && source venv-wsl/bin/activate && python -c \" *)",
       "Bash(git -C \"d:/Coding-projects/outbound-caller-python-main\" log --oneline -5)",
       "Bash(git -C \"d:/Coding-projects/outbound-caller-python-main\" status --short)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(git submodule *)",
+      "Bash(python -c ' *)",
+      "Read(//d/Coding-Projects/**)",
+      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline -S \"min_interruption_words\" -- agent.py)",
+      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline -S \"BVCTelephony\" -- agent.py)"
     ],
     "deny": [],
     "ask": [],
