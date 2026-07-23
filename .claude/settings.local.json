@@ -95,7 +95,8 @@
       "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline -S \"BVCTelephony\" -- agent.py)",
       "PowerShell(git -C d:\\\\Coding-projects-outbound 2>$null)",
       "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline --all -S \"noise_cancellation\" -- agent.py)",
-      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main show b52bedd --stat --format=\"%h %ad %s\" --date=short)"
+      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main show b52bedd --stat --format=\"%h %ad %s\" --date=short)",
+      "PowerShell(if \\(Test-Path \"d:\\\\Coding-projects\\\\outbound-caller-python-main\\\\.env.local\"\\) { Select-String -Path \"d:\\\\Coding-projects\\\\outbound-caller-python-main\\\\.env.local\" -Pattern \"ANTHROPIC_API_KEY|LLM_MODEL\" | ForEach-Object { \\($_.Line -split '='\\)[0] } } else { Write-Output \"no .env.local\" })"
     ],
     "deny": [],
     "ask": [],
