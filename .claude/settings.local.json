@@ -92,7 +92,10 @@
       "Bash(python -c ' *)",
       "Read(//d/Coding-Projects/**)",
       "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline -S \"min_interruption_words\" -- agent.py)",
-      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline -S \"BVCTelephony\" -- agent.py)"
+      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline -S \"BVCTelephony\" -- agent.py)",
+      "PowerShell(git -C d:\\\\Coding-projects-outbound 2>$null)",
+      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main log --oneline --all -S \"noise_cancellation\" -- agent.py)",
+      "PowerShell(git -C d:\\\\Coding-projects\\\\outbound-caller-python-main show b52bedd --stat --format=\"%h %ad %s\" --date=short)"
     ],
     "deny": [],
     "ask": [],
